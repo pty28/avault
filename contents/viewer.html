@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVault Viewer</title>
+    <script src="lib/tailwind.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', sans-serif;
+        }
+        .card-hover {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+        .thumbnail-placeholder {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+        }
+        .truncate-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .card-selected {
+            ring: 2px;
+            box-shadow: 0 0 0 3px #3b82f6;
+        }
+        .select-mode .card-hover:hover {
+            transform: none;
+        }
+        .select-mode .card-hover {
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 py-6">
+                <div class="flex items-center justify-between mb-2">
+                    <h1 class="text-3xl font-bold">AVault Viewer</h1>
+                    <div class="flex gap-2">
+                        <button
+                            id="selectModeBtn"
+                            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
+                        >
+                            選択モード
+                        </button>
+                        <button
+                            id="tagManageBtn"
+                            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
+                            title="タグ定義を管理"
+                        >
+                            タグ管理
+                        </button>
+                    </div>
+                </div>
+                <div class="flex gap-6 text-sm">
+                    <div>
+                        <span class="text-gray-400">総アイテム数:</span>
+                        <span class="text-gray-100 font-semibold" id="totalCount">-</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-400">女優情報あり:</span>
+                        <span class="text-gray-100 font-semibold" id="withActressesCount">-</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-400">表示中:</span>
+                        <span class="text-gray-100 font-semibold" id="displayCount">-</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Search & Filter -->
+        <div class="bg-gray-800 border-b border-gray-700">
+            <div class="max-w-7xl mx-auto px-4 py-6 space-y-4">
+                <div class="relative w-full">
+                    <input
+                        type="text"
+                        id="searchInput"
+                        placeholder="女優名・タイトル・製品番号で検索... (複数はカンマ/スペース区切り)"
+                        class="w-full px-4 py-3 pr-12 bg-gray-700 border border-gray-600 rounded-lg text-gray-100 placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                    >
+                    <button
+                        id="clearSearchBtn"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors text-lg font-bold p-1"
+                        title="検索をクリア"
+                        style="display: none;"
+                    >
+                        x
+                    </button>
+                </div>
+                <div class="flex flex-nowrap gap-2 items-center">
+                    <div class="flex gap-1 items-center">
+                        <label class="text-xs text-gray-400 whitespace-nowrap">プリセット:</label>
+                        <select
+                            id="presetSelect"
+                            class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                        >
+                        </select>
+                    </div>
+                    <div class="flex gap-1 items-center">
+                        <label class="text-xs text-gray-400 whitespace-nowrap">ソース:</label>
+                        <select
+                            id="sourceFilterSelect"
+                            class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                        >
+                            <option value="">すべて</option>
+                            <option value="dmm">DMM</option>
+                            <option value="mgstage">MGStage</option>
+                            <option value="heydouga,heyzo,1pondo">VRACK（全体）</option>
+                            <option value="heydouga">Hey動画</option>
+                            <option value="heyzo">HEYZO</option>
+                            <option value="1pondo">一本道</option>
+                            <option value="caribbean">カリビアン</option>
+                        </select>
+                    </div>
+                    <div class="flex gap-1 items-center">
+                        <label class="text-xs text-gray-400 whitespace-nowrap">タグ:</label>
+                        <select
+                            id="tagFilterSelect"
+                            class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                        >
+                            <option value="">すべて</option>
+                            <option value="__none__">タグなし</option>
+                        </select>
+                    </div>
+                    <label class="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                        <input
+                            type="checkbox"
+                            id="filterNoActresses"
+                            class="w-3.5 h-3.5 rounded bg-gray-700 border-gray-600 focus:ring-2 focus:ring-blue-500"
+                        >
+                        <span class="text-xs">女優情報なし</span>
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                        <input
+                            type="checkbox"
+                            id="filterUncensored"
+                            class="w-3.5 h-3.5 rounded bg-gray-700 border-gray-600 focus:ring-2 focus:ring-blue-500"
+                        >
+                        <span class="text-xs">無修正のみ</span>
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                        <input
+                            type="checkbox"
+                            id="deepSearch"
+                            class="w-3.5 h-3.5 rounded bg-gray-700 border-gray-600 focus:ring-2 focus:ring-blue-500"
+                        >
+                        <span class="text-xs">Deep Search</span>
+                    </label>
+                    <div class="flex-1"></div>
+                    <div class="flex gap-1 items-center">
+                        <label class="text-xs text-gray-400 whitespace-nowrap">ソート:</label>
+                        <select
+                            id="sortSelect"
+                            class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                        >
+                            <option value="registeredAt">登録順</option>
+                            <option value="productCode">製品コード</option>
+                            <option value="title">タイトル</option>
+                        </select>
+                        <button
+                            id="toggleSortOrder"
+                            class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-medium transition-colors"
+                            title="ソート順序を反転"
+                        >
+                            Sort
+                        </button>
+                    </div>
+                    <select
+                        id="viewModeSelect"
+                        class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:border-blue-500"
+                    >
+                        <option value="card">カード表示</option>
+                        <option value="table">テーブル表示</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
+            <!-- Card View -->
+            <div id="cardView" class="block">
+                <div id="cardContainer" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-4">
+                </div>
+            </div>
+
+            <!-- Table View -->
+            <div id="tableView" class="hidden overflow-x-auto" style="margin-top: 120px; min-width: 2000px;">
+                <table class="w-full border-collapse text-sm">
+                    <thead class="bg-gray-800">
+                        <tr class="border-b border-gray-700">
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300 w-12">No.</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300 w-20">画像</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300">女優</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300">タイトル</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300 w-32">製品コード</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300 w-24">製造者コード</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300">メーカー</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300">レーベル</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-300 w-32">タグ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="mt-8 flex justify-center items-center gap-2">
+                <button id="prevBtn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                    前へ
+                </button>
+                <div id="pageNumbers" class="flex gap-1">
+                </div>
+                <button id="nextBtn" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                    次へ
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 overflow-auto" style="padding: 8px;">
+        <img id="modalImage" src="" alt="" style="width: auto; height: 98vh; object-fit: contain;">
+        <button id="modalClose" class="absolute top-4 right-4 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg z-10">x</button>
+    </div>
+
+    <!-- Tag Assignment Modal -->
+    <div id="tagAssignModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-lg border border-gray-600 p-6 w-96 max-h-[80vh] overflow-y-auto">
+            <h3 class="text-lg font-bold mb-4">タグを割り当て</h3>
+            <div id="tagAssignList" class="space-y-2 mb-4">
+            </div>
+            <div class="flex gap-2 justify-end">
+                <button id="tagAssignCancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">キャンセル</button>
+                <button id="tagAssignApply" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">適用</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Management Modal -->
+    <div id="tagManageModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-lg border border-gray-600 p-6 w-96 max-h-[80vh] overflow-y-auto">
+            <h3 class="text-lg font-bold mb-4">タグ管理</h3>
+            <div id="tagManageList" class="space-y-3 mb-4">
+            </div>
+            <div class="border-t border-gray-600 pt-4 mb-4">
+                <p class="text-sm text-gray-400 mb-2">新規タグ追加</p>
+                <div class="flex gap-2">
+                    <input type="text" id="newTagName" placeholder="タグ名" class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500">
+                    <input type="color" id="newTagColor" value="#6b7280" class="w-10 h-9 rounded cursor-pointer bg-gray-700 border border-gray-600">
+                    <button id="addTagBtn" class="px-3 py-2 bg-green-700 hover:bg-green-600 rounded-lg text-sm">追加</button>
+                </div>
+            </div>
+            <div class="flex gap-2 justify-end">
+                <button id="tagManageClose" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">閉じる</button>
+                <button id="tagManageSave" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Bar -->
+    <div id="floatingBar" class="hidden fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-600 p-4 z-40">
+        <div class="max-w-7xl mx-auto flex items-center justify-center gap-4">
+            <span id="selectedCount" class="text-sm text-gray-300">0 件選択中</span>
+            <button id="assignTagsBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium">タグを割り当て</button>
+            <button id="deselectAllBtn" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">選択解除</button>
+        </div>
+    </div>
+
+    <!-- Data scripts -->
+    <script src="viewer-data.js"></script>
+    <script src="presets-data.js"></script>
+    <script src="tag-definitions-data.js"></script>
+    <script src="tags-data.js"></script>
+
+    <script>
+        // safeOpen: URL のスキームを検証してから window.open する
+        // 相対パス（/ 始まり）は同一オリジンなので許可、絶対 URL は http:/https: のみ許可
+        function safeOpen(url) {
+            if (typeof url !== 'string' || url.length === 0) return;
+            if (url.startsWith('/') && !url.startsWith('//')) {
+                window.open(url, '_blank');
+                return;
+            }
+            try {
+                const parsed = new URL(url, window.location.origin);
+                if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                    window.open(parsed.href, '_blank');
+                }
+            } catch (e) {
+                // 不正な URL は開かない
+            }
+        }
+
+        // State
+        // _idx = 元の配列インデックス（登録順ソートの同タイムスタンプ時タイブレーカー）
+        let allData = (typeof DATA !== 'undefined') ? DATA.map(function(item, i) { return Object.assign({ _idx: i }, item); }) : [];
+        let filteredData = [...allData];
+        let currentPage = 1;
+        let viewMode = 'card';
+        let sortBy = 'registeredAt';
+        let sortOrder = 'desc';
+        const CARD_PER_PAGE = 48;
+        const TABLE_PER_PAGE = 50;
+
+        // Tag state
+        let tagDefinitions = (typeof TAG_DEFINITIONS !== 'undefined') ? [...TAG_DEFINITIONS] : [];
+        let tagAssignments = (typeof TAGS !== 'undefined') ? Object.assign({}, TAGS) : {};
+        let selectMode = false;
+        let selectedItems = new Set();
+        let activeTagFilter = '';
+        let activeSourceFilter = '';
+
+        // Elements
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const filterNoActresses = document.getElementById('filterNoActresses');
+        const filterUncensored = document.getElementById('filterUncensored');
+        const sortSelect = document.getElementById('sortSelect');
+        const toggleSortOrder = document.getElementById('toggleSortOrder');
+        const viewModeSelect = document.getElementById('viewModeSelect');
+        const presetSelect = document.getElementById('presetSelect');
+        const sourceFilterSelect = document.getElementById('sourceFilterSelect');
+        const tagFilterSelect = document.getElementById('tagFilterSelect');
+        const cardContainer = document.getElementById('cardContainer');
+        const tableBody = document.getElementById('tableBody');
+        const cardView = document.getElementById('cardView');
+        const tableView = document.getElementById('tableView');
+        const totalCountEl = document.getElementById('totalCount');
+        const withActressesCountEl = document.getElementById('withActressesCount');
+        const displayCountEl = document.getElementById('displayCount');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageNumbers = document.getElementById('pageNumbers');
+        const imageModal = document.getElementById('imageModal');
+        const modalImage = document.getElementById('modalImage');
+        const modalClose = document.getElementById('modalClose');
+        const deepSearchCheckbox = document.getElementById('deepSearch');
+        const selectModeBtn = document.getElementById('selectModeBtn');
+        const floatingBar = document.getElementById('floatingBar');
+        const selectedCountEl = document.getElementById('selectedCount');
+        const assignTagsBtn = document.getElementById('assignTagsBtn');
+        const deselectAllBtn = document.getElementById('deselectAllBtn');
+        const tagAssignModal = document.getElementById('tagAssignModal');
+        const tagAssignList = document.getElementById('tagAssignList');
+        const tagAssignCancel = document.getElementById('tagAssignCancel');
+        const tagAssignApply = document.getElementById('tagAssignApply');
+        const tagManageBtn = document.getElementById('tagManageBtn');
+        const tagManageModal = document.getElementById('tagManageModal');
+        const tagManageList = document.getElementById('tagManageList');
+        const tagManageClose = document.getElementById('tagManageClose');
+        const tagManageSave = document.getElementById('tagManageSave');
+        const newTagName = document.getElementById('newTagName');
+        const newTagColor = document.getElementById('newTagColor');
+        const addTagBtn = document.getElementById('addTagBtn');
+
+        // ============ Tag Helpers ============
+
+        function getItemTags(productCode) {
+            return tagAssignments[productCode] || [];
+        }
+
+        function getTagDef(tagName) {
+            return tagDefinitions.find(function(d) { return d.name === tagName; });
+        }
+
+        function createTagBadge(tagName) {
+            var def = getTagDef(tagName);
+            var badge = document.createElement('span');
+            badge.className = 'text-xs px-1.5 py-0.5 rounded-full text-white font-medium inline-block';
+            badge.style.backgroundColor = def ? def.color : '#6b7280';
+            badge.textContent = tagName;
+            return badge;
+        }
+
+        function populateTagFilterSelect() {
+            while (tagFilterSelect.options.length > 2) {
+                tagFilterSelect.remove(2);
+            }
+            tagDefinitions.forEach(function(def) {
+                var option = document.createElement('option');
+                option.value = def.name;
+                option.textContent = def.name;
+                tagFilterSelect.appendChild(option);
+            });
+        }
+
+        // ============ API Helpers ============
+
+        async function apiSaveTagDefinitions(definitions) {
+            try {
+                var res = await fetch('/api/tag-definitions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(definitions)
+                });
+                return await res.json();
+            } catch (e) {
+                alert('タグの保存に失敗しました。サーバーモード (npm run serve) で実行してください。');
+                return { success: false };
+            }
+        }
+
+        async function apiBulkAssignTags(productCodes, addTags, removeTags) {
+            try {
+                var res = await fetch('/api/tags/bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ productCodes: productCodes, addTags: addTags, removeTags: removeTags })
+                });
+                var result = await res.json();
+                if (result.success && result.tags) {
+                    tagAssignments = result.tags;
+                }
+                return result;
+            } catch (e) {
+                alert('タグの保存に失敗しました。サーバーモード (npm run serve) で実行してください。');
+                return { success: false };
+            }
+        }
+
+        // ============ Selection Mode ============
+
+        function toggleSelectMode() {
+            selectMode = !selectMode;
+            selectedItems.clear();
+
+            if (selectMode) {
+                selectModeBtn.classList.remove('bg-gray-700');
+                selectModeBtn.classList.add('bg-blue-600');
+                document.body.classList.add('select-mode');
+            } else {
+                selectModeBtn.classList.remove('bg-blue-600');
+                selectModeBtn.classList.add('bg-gray-700');
+                document.body.classList.remove('select-mode');
+            }
+
+            updateFloatingBar();
+            renderCurrentPage();
+        }
+
+        function updateFloatingBar() {
+            if (selectedItems.size > 0) {
+                floatingBar.classList.remove('hidden');
+                selectedCountEl.textContent = selectedItems.size + ' 件選択中';
+            } else {
+                floatingBar.classList.add('hidden');
+            }
+        }
+
+        function deselectAll() {
+            selectedItems.clear();
+            updateFloatingBar();
+            renderCurrentPage();
+        }
+
+        // ============ Tag Assignment Modal ============
+
+        function openTagAssignModal() {
+            tagAssignList.textContent = '';
+
+            // 選択アイテムの現在のタグ状態を集計
+            var tagCounts = {};
+            tagDefinitions.forEach(function(def) { tagCounts[def.name] = 0; });
+            selectedItems.forEach(function(code) {
+                var itemTags = getItemTags(code);
+                itemTags.forEach(function(t) {
+                    if (tagCounts[t] !== undefined) tagCounts[t]++;
+                });
+            });
+
+            tagDefinitions.forEach(function(def) {
+                var label = document.createElement('label');
+                label.className = 'flex items-center gap-3 p-2 rounded hover:bg-gray-700 cursor-pointer';
+
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'w-4 h-4 rounded';
+                checkbox.dataset.tagName = def.name;
+
+                var count = tagCounts[def.name] || 0;
+                if (count === selectedItems.size) {
+                    checkbox.checked = true;
+                } else if (count > 0) {
+                    checkbox.indeterminate = true;
+                }
+
+                var badge = createTagBadge(def.name);
+                var countSpan = document.createElement('span');
+                countSpan.className = 'text-xs text-gray-400 ml-auto';
+                countSpan.textContent = count > 0 ? (count + '/' + selectedItems.size) : '';
+
+                label.appendChild(checkbox);
+                label.appendChild(badge);
+                label.appendChild(countSpan);
+                tagAssignList.appendChild(label);
+            });
+
+            if (tagDefinitions.length === 0) {
+                var msg = document.createElement('p');
+                msg.className = 'text-sm text-gray-400';
+                msg.textContent = 'タグが定義されていません。「タグ管理」から追加してください。';
+                tagAssignList.appendChild(msg);
+            }
+
+            tagAssignModal.classList.remove('hidden');
+        }
+
+        function closeTagAssignModal() {
+            tagAssignModal.classList.add('hidden');
+        }
+
+        async function applyTagAssignment() {
+            var addTags = [];
+            var removeTags = [];
+
+            tagAssignList.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+                var tagName = cb.dataset.tagName;
+                if (cb.checked) {
+                    addTags.push(tagName);
+                } else if (!cb.indeterminate) {
+                    removeTags.push(tagName);
+                }
+            });
+
+            if (addTags.length === 0 && removeTags.length === 0) {
+                closeTagAssignModal();
+                return;
+            }
+
+            var result = await apiBulkAssignTags(Array.from(selectedItems), addTags, removeTags);
+            if (result.success) {
+                closeTagAssignModal();
+                selectedItems.clear();
+                updateFloatingBar();
+                renderCurrentPage();
+            }
+        }
+
+        // ============ Tag Management Modal ============
+
+        var editingTagDefs = [];
+
+        function openTagManageModal() {
+            editingTagDefs = tagDefinitions.map(function(d) { return { name: d.name, color: d.color }; });
+            renderTagManageList();
+            tagManageModal.classList.remove('hidden');
+        }
+
+        function closeTagManageModal() {
+            tagManageModal.classList.add('hidden');
+        }
+
+        function renderTagManageList() {
+            tagManageList.textContent = '';
+
+            editingTagDefs.forEach(function(def, idx) {
+                var row = document.createElement('div');
+                row.className = 'flex items-center gap-2';
+
+                var colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = def.color;
+                colorInput.className = 'w-8 h-8 rounded cursor-pointer bg-gray-700 border border-gray-600';
+                colorInput.addEventListener('input', function(e) {
+                    editingTagDefs[idx].color = e.target.value;
+                });
+
+                var nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.value = def.name;
+                nameInput.className = 'flex-1 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 focus:outline-none focus:border-blue-500';
+                nameInput.addEventListener('input', function(e) {
+                    editingTagDefs[idx].name = e.target.value;
+                });
+
+                var delBtn = document.createElement('button');
+                delBtn.className = 'px-2 py-1 bg-red-800 hover:bg-red-700 rounded text-xs';
+                delBtn.textContent = '削除';
+                delBtn.addEventListener('click', function() {
+                    editingTagDefs.splice(idx, 1);
+                    renderTagManageList();
+                });
+
+                row.appendChild(colorInput);
+                row.appendChild(nameInput);
+                row.appendChild(delBtn);
+                tagManageList.appendChild(row);
+            });
+
+            if (editingTagDefs.length === 0) {
+                var msg = document.createElement('p');
+                msg.className = 'text-sm text-gray-400';
+                msg.textContent = 'タグがありません。下のフォームから追加してください。';
+                tagManageList.appendChild(msg);
+            }
+        }
+
+        function addNewTag() {
+            var name = newTagName.value.trim();
+            if (!name) return;
+            if (editingTagDefs.some(function(d) { return d.name === name; })) {
+                alert('同じ名前のタグが既に存在します。');
+                return;
+            }
+            editingTagDefs.push({ name: name, color: newTagColor.value });
+            newTagName.value = '';
+            newTagColor.value = '#6b7280';
+            renderTagManageList();
+        }
+
+        async function saveTagDefinitions() {
+            var names = editingTagDefs.map(function(d) { return d.name.trim(); }).filter(function(n) { return n; });
+            if (names.length !== editingTagDefs.length) {
+                alert('タグ名が空のものがあります。');
+                return;
+            }
+            if (new Set(names).size !== names.length) {
+                alert('重複するタグ名があります。');
+                return;
+            }
+
+            var cleaned = editingTagDefs.map(function(d) { return { name: d.name.trim(), color: d.color }; });
+            var result = await apiSaveTagDefinitions(cleaned);
+            if (result.success) {
+                tagDefinitions = cleaned;
+                populateTagFilterSelect();
+                closeTagManageModal();
+                renderCurrentPage();
+            }
+        }
+
+        // ============ Initialize ============
+
+        function init() {
+            totalCountEl.textContent = allData.length.toLocaleString();
+            var withActresses = allData.filter(function(item) { return item.actresses && item.actresses.length > 0; }).length;
+            withActressesCountEl.textContent = withActresses.toLocaleString();
+
+            initPresets();
+            populateTagFilterSelect();
+            setupEventListeners();
+            applyFilters();
+        }
+
+        // ============ Event Listeners ============
+
+        function setupEventListeners() {
+            searchInput.addEventListener('input', async function(e) {
+                clearSearchBtn.style.display = e.target.value ? 'block' : 'none';
+                cachedSearchTerms = [];
+                if (deepSearchCheckbox.checked && e.target.value.trim()) {
+                    var originalTerms = e.target.value.trim()
+                        .split(/[,\s]+/)
+                        .filter(function(term) { return term.length > 0; });
+                    if (originalTerms.length > 0) {
+                        cachedSearchTerms = await expandSearchTermsWithDeepSearch(originalTerms);
+                        searchInput.value = cachedSearchTerms.join(' ');
+                    }
+                }
+                applyFilters();
+            });
+            clearSearchBtn.addEventListener('click', function() {
+                searchInput.value = '';
+                clearSearchBtn.style.display = 'none';
+                applyFilters();
+                searchInput.focus();
+            });
+            filterNoActresses.addEventListener('change', applyFilters);
+            filterUncensored.addEventListener('change', applyFilters);
+            sourceFilterSelect.addEventListener('change', function(e) {
+                activeSourceFilter = e.target.value;
+                applyFilters();
+            });
+            tagFilterSelect.addEventListener('change', function(e) {
+                activeTagFilter = e.target.value;
+                applyFilters();
+            });
+            deepSearchCheckbox.addEventListener('change', async function() {
+                cachedSearchTerms = [];
+                var searchInput_value = searchInput.value.trim();
+                if (deepSearchCheckbox.checked && searchInput_value) {
+                    var originalTerms = searchInput_value
+                        .split(/[,\s]+/)
+                        .filter(function(term) { return term.length > 0; });
+                    if (originalTerms.length > 0) {
+                        cachedSearchTerms = await expandSearchTermsWithDeepSearch(originalTerms);
+                        searchInput.value = cachedSearchTerms.join(' ');
+                    }
+                }
+                applyFilters();
+            });
+            sortSelect.addEventListener('change', function(e) {
+                sortBy = e.target.value;
+                applyFilters();
+            });
+            toggleSortOrder.addEventListener('click', function() {
+                sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+                applyFilters();
+            });
+            viewModeSelect.addEventListener('change', function(e) { setViewMode(e.target.value); });
+            prevBtn.addEventListener('click', previousPage);
+            nextBtn.addEventListener('click', nextPage);
+
+            // Image modal
+            modalClose.addEventListener('click', closeImageModal);
+            imageModal.addEventListener('click', function(e) {
+                if (e.target === imageModal) closeImageModal();
+            });
+
+            // Selection mode
+            selectModeBtn.addEventListener('click', toggleSelectMode);
+            deselectAllBtn.addEventListener('click', deselectAll);
+            assignTagsBtn.addEventListener('click', openTagAssignModal);
+
+            // Tag assign modal
+            tagAssignCancel.addEventListener('click', closeTagAssignModal);
+            tagAssignApply.addEventListener('click', applyTagAssignment);
+            tagAssignModal.addEventListener('click', function(e) {
+                if (e.target === tagAssignModal) closeTagAssignModal();
+            });
+
+            // Tag manage modal
+            tagManageBtn.addEventListener('click', openTagManageModal);
+            tagManageClose.addEventListener('click', closeTagManageModal);
+            tagManageSave.addEventListener('click', saveTagDefinitions);
+            addTagBtn.addEventListener('click', addNewTag);
+            newTagName.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') addNewTag();
+            });
+            tagManageModal.addEventListener('click', function(e) {
+                if (e.target === tagManageModal) closeTagManageModal();
+            });
+
+            // Keyboard
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    closeImageModal();
+                    closeTagAssignModal();
+                    closeTagManageModal();
+                }
+            });
+        }
+
+        // ============ Image Modal ============
+
+        function showImageModal(src) {
+            modalImage.src = src;
+            imageModal.classList.remove('hidden');
+        }
+
+        function closeImageModal() {
+            imageModal.classList.add('hidden');
+            modalImage.src = '';
+        }
+
+        // ============ Deep Search ============
+
+        async function expandSearchTermsWithDeepSearch(originalTerms) {
+            if (!deepSearchCheckbox.checked || originalTerms.length === 0) {
+                return originalTerms;
+            }
+            var expandedTerms = new Set(originalTerms);
+            var apiBaseUrl = '';
+            for (var ti = 0; ti < originalTerms.length; ti++) {
+                var term = originalTerms[ti];
+                try {
+                    var searchRes = await fetch(apiBaseUrl + '/search?alias=' + encodeURIComponent(term));
+                    var mainName = null;
+                    if (searchRes.ok) {
+                        var searchData = await searchRes.json();
+                        if (searchData.results && searchData.results.length > 0) {
+                            mainName = searchData.results[0].main_name;
+                            expandedTerms.add(mainName.toLowerCase());
+                        }
+                    }
+                    var nameToSearch = mainName || term;
+                    var detailsRes = await fetch(apiBaseUrl + '/details?name=' + encodeURIComponent(nameToSearch));
+                    if (detailsRes.ok) {
+                        var detailsData = await detailsRes.json();
+                        if (detailsData.aliases && Array.isArray(detailsData.aliases)) {
+                            detailsData.aliases.forEach(function(alias) {
+                                expandedTerms.add(alias.toLowerCase());
+                            });
+                        }
+                        if (detailsData.main_name) {
+                            expandedTerms.add(detailsData.main_name.toLowerCase());
+                        }
+                    }
+                } catch (error) {
+                    console.debug('Deep Search API error for "' + term + '":', error);
+                }
+            }
+            return Array.from(expandedTerms);
+        }
+
+        // ============ Filtering ============
+
+        var cachedSearchTerms = [];
+
+        function applyFilters() {
+            var searchInput_value = searchInput.value.toLowerCase();
+            var onlyNoActresses = filterNoActresses.checked;
+            var onlyUncensored = filterUncensored.checked;
+
+            var searchTerms = cachedSearchTerms.length > 0
+                ? cachedSearchTerms
+                : (searchInput_value
+                    ? searchInput_value.split(/[,\s]+/).filter(function(term) { return term.length > 0; })
+                    : []);
+
+            filteredData = allData.filter(function(item) {
+                if (onlyNoActresses && item.actresses && item.actresses.length > 0) return false;
+                if (onlyUncensored && !item.isUncensored) return false;
+
+                // Source filter (複数値対応: カンマ区切り)
+                if (activeSourceFilter) {
+                    var allowedSources = activeSourceFilter.split(',');
+                    if (allowedSources.indexOf(item.source) === -1) return false;
+                }
+
+                // Tag filter
+                if (activeTagFilter) {
+                    var itemTags = getItemTags(item.productCode);
+                    if (activeTagFilter === '__none__') {
+                        if (itemTags.length > 0) return false;
+                    } else {
+                        if (itemTags.indexOf(activeTagFilter) === -1) return false;
+                    }
+                }
+
+                // Search filter with OR condition
+                if (searchTerms.length > 0) {
+                    var productCode = (item.productCode || '').toLowerCase();
+                    var title = (item.title || '').toLowerCase();
+                    var actresses = (item.actresses || []).map(function(a) { return a.toLowerCase(); }).join(' ');
+                    var makerName = (item.makerName || '').toLowerCase();
+                    var labelName = (item.labelName || '').toLowerCase();
+                    var manufacturerCode = (item.manufacturerCode || '').toLowerCase();
+
+                    var matchesAny = searchTerms.some(function(term) {
+                        return productCode.indexOf(term) !== -1 ||
+                            title.indexOf(term) !== -1 ||
+                            actresses.indexOf(term) !== -1 ||
+                            makerName.indexOf(term) !== -1 ||
+                            labelName.indexOf(term) !== -1 ||
+                            manufacturerCode.indexOf(term) !== -1;
+                    });
+
+                    if (!matchesAny) return false;
+                }
+
+                return true;
+            });
+
+            applySorting();
+            currentPage = 1;
+            displayCountEl.textContent = filteredData.length.toLocaleString();
+            renderCurrentPage();
+        }
+
+        // ============ Sorting ============
+
+        function applySorting() {
+            if (sortBy === 'registeredAt') {
+                filteredData.sort(function(a, b) {
+                    var tA = a.registeredAt ? new Date(a.registeredAt).getTime() : 0;
+                    var tB = b.registeredAt ? new Date(b.registeredAt).getTime() : 0;
+                    if (tA !== tB) return sortOrder === 'asc' ? tA - tB : tB - tA;
+                    // 同タイムスタンプはスクレイプ順（_idx）で安定ソート
+                    var idxA = a._idx || 0;
+                    var idxB = b._idx || 0;
+                    return sortOrder === 'asc' ? idxA - idxB : idxB - idxA;
+                });
+            } else if (sortBy === 'productCode') {
+                filteredData.sort(function(a, b) {
+                    var codeA = (a.productCode || '').toLowerCase();
+                    var codeB = (b.productCode || '').toLowerCase();
+                    return sortOrder === 'asc' ? codeA.localeCompare(codeB) : codeB.localeCompare(codeA);
+                });
+            } else if (sortBy === 'title') {
+                filteredData.sort(function(a, b) {
+                    var titleA = (a.title || '').toLowerCase();
+                    var titleB = (b.title || '').toLowerCase();
+                    return sortOrder === 'asc' ? titleA.localeCompare(titleB, 'ja') : titleB.localeCompare(titleA, 'ja');
+                });
+            }
+        }
+
+        // ============ View Mode ============
+
+        function setViewMode(mode) {
+            viewMode = mode;
+            currentPage = 1;
+            if (mode === 'card') {
+                cardView.classList.remove('hidden');
+                tableView.classList.add('hidden');
+            } else {
+                cardView.classList.add('hidden');
+                tableView.classList.remove('hidden');
+            }
+            viewModeSelect.value = mode;
+            renderCurrentPage();
+        }
+
+        // ============ Pagination ============
+
+        function renderCurrentPage() {
+            var itemsPerPage = viewMode === 'card' ? CARD_PER_PAGE : TABLE_PER_PAGE;
+            var startIndex = (currentPage - 1) * itemsPerPage;
+            var endIndex = startIndex + itemsPerPage;
+            var pageData = filteredData.slice(startIndex, endIndex);
+
+            if (viewMode === 'card') {
+                renderCards(pageData, startIndex);
+            } else {
+                renderTable(pageData, startIndex);
+            }
+
+            updatePagination();
+        }
+
+        // ============ Render Cards ============
+
+        function renderCards(items, startIndex) {
+            cardContainer.textContent = '';
+
+            items.forEach(function(item, idx) {
+                var card = document.createElement('div');
+                card.className = 'card-hover bg-gray-800 rounded-lg overflow-hidden border border-gray-700 hover:border-blue-500';
+
+                // 選択状態の反映
+                if (selectMode && selectedItems.has(item.productCode)) {
+                    card.classList.add('card-selected');
+                }
+
+                // 選択モード時のカードクリック
+                if (selectMode) {
+                    card.addEventListener('click', (function(currentItem, currentCard) {
+                        return function() {
+                            var code = currentItem.productCode;
+                            if (selectedItems.has(code)) {
+                                selectedItems.delete(code);
+                                currentCard.classList.remove('card-selected');
+                            } else {
+                                selectedItems.add(code);
+                                currentCard.classList.add('card-selected');
+                            }
+                            // Update checkbox overlay
+                            var overlay = currentCard.querySelector('.check-overlay');
+                            if (overlay) {
+                                if (selectedItems.has(code)) {
+                                    overlay.className = 'check-overlay absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center text-xs font-bold bg-blue-600 border-blue-600 text-white';
+                                    overlay.textContent = '\u2713';
+                                } else {
+                                    overlay.className = 'check-overlay absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center text-xs font-bold bg-gray-800 bg-opacity-60 border-gray-400 text-transparent';
+                                    overlay.textContent = '';
+                                }
+                            }
+                            updateFloatingBar();
+                        };
+                    })(item, card));
+                }
+
+                // Thumbnail container
+                var thumbDiv = document.createElement('div');
+                thumbDiv.className = 'aspect-[3/4] bg-gray-700 overflow-hidden group';
+                thumbDiv.style.cursor = 'pointer';
+                thumbDiv.style.position = 'relative';
+
+                var img = document.createElement('img');
+                img.src = item.thumbnail;
+                img.alt = item.title;
+                img.className = 'w-full h-full object-cover';
+                img.style.cursor = selectMode ? 'pointer' : 'zoom-in';
+                if (!selectMode) {
+                    img.addEventListener('click', (function(currentItem) {
+                        return function(e) {
+                            e.stopPropagation();
+                            showImageModal(currentItem.thumbnail);
+                        };
+                    })(item));
+                }
+                img.onerror = function() {
+                    this.parentElement.classList.add('thumbnail-placeholder');
+                };
+
+                thumbDiv.appendChild(img);
+
+                if (!selectMode) {
+                    var openBtn = document.createElement('div');
+                    openBtn.className = 'absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 flex items-center justify-center transition-all hidden group-hover:flex';
+                    openBtn.style.cursor = 'pointer';
+                    openBtn.textContent = 'View';
+                    openBtn.style.position = 'absolute';
+                    openBtn.style.top = '0';
+                    openBtn.style.left = '0';
+                    openBtn.style.width = '100%';
+                    openBtn.style.height = '100%';
+                    openBtn.addEventListener('click', (function(currentItem) {
+                        return function(e) {
+                            e.stopPropagation();
+                            showImageModal(currentItem.thumbnail);
+                        };
+                    })(item));
+                    thumbDiv.appendChild(openBtn);
+                }
+
+                // Selection checkbox overlay
+                if (selectMode) {
+                    var checkOverlay = document.createElement('div');
+                    checkOverlay.className = 'check-overlay absolute top-2 left-2 w-6 h-6 rounded border-2 flex items-center justify-center text-xs font-bold';
+                    if (selectedItems.has(item.productCode)) {
+                        checkOverlay.className += ' bg-blue-600 border-blue-600 text-white';
+                        checkOverlay.textContent = '\u2713';
+                    } else {
+                        checkOverlay.className += ' bg-gray-800 bg-opacity-60 border-gray-400 text-transparent';
+                    }
+                    thumbDiv.appendChild(checkOverlay);
+                }
+
+                // Info container
+                var infoDiv = document.createElement('div');
+                infoDiv.className = 'p-4 space-y-2';
+
+                // Product code + source badge
+                var codeDiv = document.createElement('div');
+                codeDiv.className = 'flex items-center gap-1';
+                var codeP = document.createElement('span');
+                codeP.className = 'text-xs text-gray-400 font-mono';
+                codeP.textContent = item.productCode;
+                codeDiv.appendChild(codeP);
+                if (item.source === 'mgstage') {
+                    var srcBadge = document.createElement('span');
+                    srcBadge.className = 'text-xs px-1 py-0.5 rounded bg-orange-900 text-orange-300 font-medium';
+                    srcBadge.textContent = 'MGS';
+                    codeDiv.appendChild(srcBadge);
+                } else if (item.source === 'heydouga') {
+                    var srcBadge = document.createElement('span');
+                    srcBadge.className = 'text-xs px-1 py-0.5 rounded bg-purple-900 text-purple-300 font-medium';
+                    srcBadge.textContent = 'HEY';
+                    codeDiv.appendChild(srcBadge);
+                } else if (item.source === 'heyzo') {
+                    var srcBadge = document.createElement('span');
+                    srcBadge.className = 'text-xs px-1 py-0.5 rounded bg-purple-900 text-purple-300 font-medium';
+                    srcBadge.textContent = 'HEYZO';
+                    codeDiv.appendChild(srcBadge);
+                } else if (item.source === '1pondo') {
+                    var srcBadge = document.createElement('span');
+                    srcBadge.className = 'text-xs px-1 py-0.5 rounded bg-purple-900 text-purple-300 font-medium';
+                    srcBadge.textContent = '1P';
+                    codeDiv.appendChild(srcBadge);
+                } else if (item.source === 'caribbean') {
+                    var srcBadge = document.createElement('span');
+                    srcBadge.className = 'text-xs px-1 py-0.5 rounded bg-green-900 text-green-300 font-medium';
+                    srcBadge.textContent = 'CBN';
+                    codeDiv.appendChild(srcBadge);
+                }
+                infoDiv.appendChild(codeDiv);
+
+                // Title
+                var titleP = document.createElement('p');
+                titleP.className = 'text-sm font-medium truncate-2' + (item.itemURL && !selectMode ? ' text-blue-300 hover:text-blue-200 hover:underline cursor-pointer' : '');
+                titleP.textContent = item.title;
+                titleP.title = item.title;
+                if (item.itemURL && !selectMode) {
+                    titleP.addEventListener('click', (function(currentItem) {
+                        return function(e) {
+                            e.stopPropagation();
+                            safeOpen(currentItem.itemURL);
+                        };
+                    })(item));
+                }
+                infoDiv.appendChild(titleP);
+
+                // Play buttons
+                if (item.playerUrls && item.playerUrls.length > 0 && !selectMode) {
+                    var playDiv = document.createElement('div');
+                    playDiv.className = 'flex flex-wrap gap-1 mt-1';
+                    item.playerUrls.forEach(function(url, pIdx) {
+                        var btn = document.createElement('button');
+                        btn.textContent = '\u25B6 ' + (pIdx + 1);
+                        btn.className = 'text-xs px-2 py-0.5 bg-green-800 hover:bg-green-700 text-green-200 rounded transition-colors';
+                        btn.title = url;
+                        btn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            safeOpen(url);
+                        });
+                        playDiv.appendChild(btn);
+                    });
+                    infoDiv.appendChild(playDiv);
+                }
+
+                // Actresses
+                if (item.actresses && item.actresses.length > 0) {
+                    var actressesP = document.createElement('p');
+                    actressesP.className = 'text-xs space-x-1';
+                    var actressIcon = document.createElement('span');
+                    actressIcon.textContent = '\uD83D\uDC64 ';
+                    actressesP.appendChild(actressIcon);
+
+                    item.actresses.forEach(function(actress, aIdx) {
+                        if (selectMode) {
+                            var span = document.createElement('span');
+                            span.textContent = actress;
+                            span.className = 'text-blue-400';
+                            actressesP.appendChild(span);
+                        } else {
+                            var link = document.createElement('button');
+                            link.textContent = actress;
+                            link.className = 'text-blue-400 hover:text-blue-300 hover:underline transition-colors';
+                            link.addEventListener('click', (function(actressName) {
+                                return function(e) {
+                                    e.stopPropagation();
+                                    searchInput.value = actressName;
+                                    clearSearchBtn.style.display = 'block';
+                                    applyFilters();
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                };
+                            })(actress));
+                            actressesP.appendChild(link);
+                        }
+
+                        if (aIdx < item.actresses.length - 1) {
+                            var comma = document.createElement('span');
+                            comma.textContent = ', ';
+                            comma.className = 'text-gray-400';
+                            actressesP.appendChild(comma);
+                        }
+                    });
+
+                    infoDiv.appendChild(actressesP);
+                } else {
+                    var noActressP = document.createElement('p');
+                    noActressP.className = 'text-xs text-gray-500';
+                    noActressP.textContent = '\uD83D\uDC64 情報なし';
+                    infoDiv.appendChild(noActressP);
+                }
+
+                // Maker
+                if (item.makerName) {
+                    var makerP = document.createElement('p');
+                    makerP.className = 'text-xs text-gray-400';
+                    makerP.textContent = '\uD83C\uDFED ' + item.makerName;
+                    infoDiv.appendChild(makerP);
+                }
+
+                // Tags
+                var itemTags = getItemTags(item.productCode);
+                if (itemTags.length > 0) {
+                    var tagsDiv = document.createElement('div');
+                    tagsDiv.className = 'flex flex-wrap gap-1 mt-1';
+                    itemTags.forEach(function(tagName) {
+                        tagsDiv.appendChild(createTagBadge(tagName));
+                    });
+                    infoDiv.appendChild(tagsDiv);
+                }
+
+                card.appendChild(thumbDiv);
+                card.appendChild(infoDiv);
+                cardContainer.appendChild(card);
+            });
+        }
+
+        // ============ Render Table ============
+
+        function renderTable(items, startIndex) {
+            while (tableBody.firstChild) {
+                tableBody.removeChild(tableBody.firstChild);
+            }
+
+            items.forEach(function(item, idx) {
+                var row = document.createElement('tr');
+                row.className = 'border-b border-gray-700 hover:bg-gray-800 transition-colors';
+
+                if (selectMode && selectedItems.has(item.productCode)) {
+                    row.classList.add('bg-blue-900', 'bg-opacity-30');
+                }
+
+                if (selectMode) {
+                    row.style.cursor = 'pointer';
+                    row.addEventListener('click', (function(currentItem, currentRow) {
+                        return function() {
+                            var code = currentItem.productCode;
+                            if (selectedItems.has(code)) {
+                                selectedItems.delete(code);
+                                currentRow.classList.remove('bg-blue-900', 'bg-opacity-30');
+                            } else {
+                                selectedItems.add(code);
+                                currentRow.classList.add('bg-blue-900', 'bg-opacity-30');
+                            }
+                            updateFloatingBar();
+                        };
+                    })(item, row));
+                }
+
+                // No.
+                var noTd = document.createElement('td');
+                noTd.className = 'px-4 py-3 text-blue-400 font-semibold bg-gray-800';
+                noTd.textContent = (startIndex + idx + 1).toString();
+                row.appendChild(noTd);
+
+                // Thumbnail
+                var thumbTd = document.createElement('td');
+                thumbTd.className = 'px-4 py-3';
+                var thumbImg = document.createElement('img');
+                thumbImg.src = item.thumbnail;
+                thumbImg.alt = item.title;
+                thumbImg.className = 'w-16 h-10 object-cover rounded cursor-pointer hover:opacity-75 transition-opacity';
+                thumbImg.style.cursor = 'zoom-in';
+                if (!selectMode) {
+                    thumbImg.addEventListener('click', (function(currentItem) {
+                        return function(e) {
+                            e.stopPropagation();
+                            showImageModal(currentItem.thumbnail);
+                        };
+                    })(item));
+                }
+                thumbImg.onerror = function() {
+                    this.classList.add('thumbnail-placeholder');
+                };
+                thumbTd.appendChild(thumbImg);
+                row.appendChild(thumbTd);
+
+                // Actresses
+                var actressesTd = document.createElement('td');
+                actressesTd.className = 'px-4 py-3 text-sm space-x-1';
+                if (item.actresses && item.actresses.length > 0) {
+                    item.actresses.forEach(function(actress, aIdx) {
+                        if (selectMode) {
+                            var span = document.createElement('span');
+                            span.textContent = actress;
+                            span.className = 'text-blue-400';
+                            actressesTd.appendChild(span);
+                        } else {
+                            var link = document.createElement('button');
+                            link.textContent = actress;
+                            link.className = 'text-blue-400 hover:text-blue-300 hover:underline transition-colors';
+                            link.addEventListener('click', (function(actressName) {
+                                return function(e) {
+                                    e.stopPropagation();
+                                    searchInput.value = actressName;
+                                    clearSearchBtn.style.display = 'block';
+                                    applyFilters();
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                };
+                            })(actress));
+                            actressesTd.appendChild(link);
+                        }
+
+                        if (aIdx < item.actresses.length - 1) {
+                            var comma = document.createElement('span');
+                            comma.textContent = ', ';
+                            comma.className = 'text-gray-400';
+                            actressesTd.appendChild(comma);
+                        }
+                    });
+                } else {
+                    var span = document.createElement('span');
+                    span.className = 'text-gray-500';
+                    span.textContent = '-';
+                    actressesTd.appendChild(span);
+                }
+                row.appendChild(actressesTd);
+
+                // Title
+                var titleTd = document.createElement('td');
+                titleTd.className = 'px-4 py-3';
+                var titleDiv = document.createElement('div');
+                titleDiv.className = 'truncate text-sm' + (item.itemURL && !selectMode ? ' text-blue-300 hover:text-blue-200 hover:underline cursor-pointer' : '');
+                titleDiv.textContent = item.title;
+                if (item.itemURL && !selectMode) {
+                    titleDiv.addEventListener('click', (function(currentItem) {
+                        return function(e) {
+                            e.stopPropagation();
+                            safeOpen(currentItem.itemURL);
+                        };
+                    })(item));
+                }
+                titleTd.appendChild(titleDiv);
+                if (item.playerUrls && item.playerUrls.length > 0 && !selectMode) {
+                    var playDiv = document.createElement('div');
+                    playDiv.className = 'flex flex-wrap gap-1 mt-1';
+                    item.playerUrls.forEach(function(url, pIdx) {
+                        var btn = document.createElement('button');
+                        btn.textContent = '\u25B6 ' + (pIdx + 1);
+                        btn.className = 'text-xs px-2 py-0.5 bg-green-800 hover:bg-green-700 text-green-200 rounded transition-colors';
+                        btn.title = url;
+                        btn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            safeOpen(url);
+                        });
+                        playDiv.appendChild(btn);
+                    });
+                    titleTd.appendChild(playDiv);
+                }
+                row.appendChild(titleTd);
+
+                // Product Code + source badge
+                var codeTd = document.createElement('td');
+                codeTd.className = 'px-4 py-3 font-mono text-sm text-gray-300';
+                var codeSpan = document.createElement('span');
+                codeSpan.textContent = item.productCode;
+                codeTd.appendChild(codeSpan);
+                if (item.source === 'mgstage') {
+                    var tblSrcBadge = document.createElement('span');
+                    tblSrcBadge.className = 'ml-1 text-xs px-1 py-0.5 rounded bg-orange-900 text-orange-300 font-medium font-sans';
+                    tblSrcBadge.textContent = 'MGS';
+                    codeTd.appendChild(tblSrcBadge);
+                } else if (item.source === 'heydouga') {
+                    var tblSrcBadge = document.createElement('span');
+                    tblSrcBadge.className = 'ml-1 text-xs px-1 py-0.5 rounded bg-purple-900 text-purple-300 font-medium font-sans';
+                    tblSrcBadge.textContent = 'HEY';
+                    codeTd.appendChild(tblSrcBadge);
+                } else if (item.source === 'heyzo') {
+                    var tblSrcBadge = document.createElement('span');
+                    tblSrcBadge.className = 'ml-1 text-xs px-1 py-0.5 rounded bg-purple-900 text-purple-300 font-medium font-sans';
+                    tblSrcBadge.textContent = 'HEYZO';
+                    codeTd.appendChild(tblSrcBadge);
+                } else if (item.source === '1pondo') {
+                    var tblSrcBadge = document.createElement('span');
+                    tblSrcBadge.className = 'ml-1 text-xs px-1 py-0.5 rounded bg-purple-900 text-purple-300 font-medium font-sans';
+                    tblSrcBadge.textContent = '1P';
+                    codeTd.appendChild(tblSrcBadge);
+                } else if (item.source === 'caribbean') {
+                    var tblSrcBadge = document.createElement('span');
+                    tblSrcBadge.className = 'ml-1 text-xs px-1 py-0.5 rounded bg-green-900 text-green-300 font-medium font-sans';
+                    tblSrcBadge.textContent = 'CBN';
+                    codeTd.appendChild(tblSrcBadge);
+                }
+                row.appendChild(codeTd);
+
+                // Manufacturer Code
+                var mfgCodeTd = document.createElement('td');
+                mfgCodeTd.className = 'px-4 py-3 font-mono text-sm text-gray-400';
+                mfgCodeTd.textContent = item.manufacturerCode || '-';
+                row.appendChild(mfgCodeTd);
+
+                // Maker
+                var makerTd = document.createElement('td');
+                makerTd.className = 'px-4 py-3 text-sm text-gray-400';
+                makerTd.textContent = item.makerName ? item.makerName : '-';
+                row.appendChild(makerTd);
+
+                // Label
+                var labelTd = document.createElement('td');
+                labelTd.className = 'px-4 py-3 text-sm text-gray-400';
+                labelTd.textContent = item.labelName ? item.labelName : '-';
+                row.appendChild(labelTd);
+
+                // Tags
+                var tagsTd = document.createElement('td');
+                tagsTd.className = 'px-4 py-3';
+                var itemTags = getItemTags(item.productCode);
+                if (itemTags.length > 0) {
+                    var tagsDiv = document.createElement('div');
+                    tagsDiv.className = 'flex flex-wrap gap-1';
+                    itemTags.forEach(function(tagName) {
+                        tagsDiv.appendChild(createTagBadge(tagName));
+                    });
+                    tagsTd.appendChild(tagsDiv);
+                } else {
+                    tagsTd.textContent = '-';
+                    tagsTd.classList.add('text-gray-500');
+                }
+                row.appendChild(tagsTd);
+
+                tableBody.appendChild(row);
+            });
+        }
+
+        // ============ Pagination Controls ============
+
+        function updatePagination() {
+            var itemsPerPage = viewMode === 'card' ? CARD_PER_PAGE : TABLE_PER_PAGE;
+            var totalPages = Math.ceil(filteredData.length / itemsPerPage);
+
+            prevBtn.disabled = currentPage === 1;
+            nextBtn.disabled = currentPage === totalPages;
+
+            pageNumbers.textContent = '';
+            var maxVisible = 7;
+            var halfWindow = Math.floor(maxVisible / 2);
+            var start = Math.max(1, currentPage - halfWindow);
+            var end = Math.min(totalPages, currentPage + halfWindow);
+
+            if (end - start + 1 < maxVisible) {
+                if (start === 1) end = Math.min(totalPages, start + maxVisible - 1);
+                else start = Math.max(1, end - maxVisible + 1);
+            }
+
+            for (var i = start; i <= end; i++) {
+                var btn = document.createElement('button');
+                btn.textContent = i.toString();
+                btn.className = 'px-3 py-2 rounded text-sm ' + (
+                    i === currentPage
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 hover:bg-gray-600 text-gray-100'
+                );
+                btn.addEventListener('click', (function(page) {
+                    return function() { goToPage(page); };
+                })(i));
+                pageNumbers.appendChild(btn);
+            }
+        }
+
+        function previousPage() {
+            if (currentPage > 1) goToPage(currentPage - 1);
+        }
+
+        function nextPage() {
+            var itemsPerPage = viewMode === 'card' ? CARD_PER_PAGE : TABLE_PER_PAGE;
+            var totalPages = Math.ceil(filteredData.length / itemsPerPage);
+            if (currentPage < totalPages) goToPage(currentPage + 1);
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            renderCurrentPage();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ============ Presets ============
+
+        function initPresets() {
+            var presets = (typeof PRESETS !== 'undefined') ? PRESETS : [];
+            presets.forEach(function(preset, index) {
+                var option = document.createElement('option');
+                option.value = index;
+                option.textContent = preset.label;
+                presetSelect.appendChild(option);
+            });
+            presetSelect.addEventListener('change', function(e) {
+                var idx = parseInt(e.target.value, 10);
+                var preset = presets[idx];
+                if (!preset) return;
+                searchInput.value = preset.query;
+                clearSearchBtn.style.display = preset.query ? 'block' : 'none';
+                applyFilters();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>

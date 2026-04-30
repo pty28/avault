@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables
+.env
+
+# Session cookies (sensitive)
+heydouga-cookies.json
+dmm-cookies.json
+
+# Browser profiles (sensitive - contains login sessions)
+.puppeteer-profiles/
+
+# Debug files
+dmm-page-structure.html
+*-analysis.json
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Debug
+debug/
+debug-*
+test-*
+*.orig
+*.org
+*.csv
+*.log
+
+# Auto-generated viewer files
+contents/viewer-data.js
+contents/presets-data.js

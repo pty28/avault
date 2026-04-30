@@ -1,0 +1,48 @@
+{
+  "name": "dmm-library-scraper",
+  "version": "1.0.0",
+  "description": "DMMマイライブラリから作品情報を取得するツール",
+  "main": "scripts/scrape-dmm-library.js",
+  "scripts": {
+    "help": "node scripts/help.js",
+    "scrape-dmm": "node scripts/scrape-dmm-library.js",
+    "scrape-manufacturer-codes": "node scripts/scrape-manufacturer-codes.js",
+    "fetch-actresses": "node scripts/fetch-actresses.js",
+    "fetch-info": "node scripts/fetch-info.js",
+    "search-actress": "node scripts/search-actress.js",
+    "search-actress-mgstage": "node scripts/search-actress.js --file data/mgstage-library.json",
+    "search-actress-vrack": "node scripts/search-actress.js --file data/vrack-library.json",
+    "search-actress-1pondo": "node scripts/search-actress.js --file data/vrack-library.json",
+    "run-all": "node scripts/run-all.js",
+    "run-all-dmm": "node scripts/run-all-dmm.js",
+    "search-products-by-actress": "node scripts/utils/search-products-by-actress.js",
+    "update-performers": "node scripts/utils/update-performers.js",
+    "update-performers-mgstage": "node scripts/utils/update-performers.js --file data/mgstage-library.json",
+    "update-performers-vrack": "node scripts/utils/update-performers.js --file data/vrack-library.json",
+    "update-performers-caribbean": "node scripts/utils/update-performers.js --file data/caribbean-library.json",
+    "update-performers-1pondo": "node scripts/utils/update-performers.js --file data/vrack-library.json",
+    "fetch-player-urls": "node scripts/fetch-player-urls.js",
+    "fetch-player-urls-full": "node scripts/fetch-player-urls.js --full",
+    "fetch-player-urls-force": "node scripts/fetch-player-urls.js --force",
+    "generate-viewer": "node scripts/utils/generate-viewer.js",
+    "viewer": "npm run generate-viewer && open contents/viewer.html",
+    "serve": "npm run generate-viewer && node scripts/serve-viewer.js",
+    "scrape-mylist": "node scripts/scrape-mylist-tags.js",
+    "scrape-vrack": "node scripts/scrape-vrack.js",
+    "scrape-mgstage": "node scripts/scrape-mgstage.js",
+    "scrape-mgstage-full": "node scripts/scrape-mgstage.js --full",
+    "scrape-caribbean": "node scripts/scrape-caribbean.js",
+    "run-all-mgs": "node scripts/run-all-mgs.js"
+  },
+  "keywords": [
+    "dmm",
+    "scraper",
+    "puppeteer"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "sqlite3": "^5.1.6",
+    "puppeteer": "^21.11.0"
+  }
+}
