@@ -236,7 +236,7 @@ async function main() {
 
       if (libraryClicked) {
         console.log('   ✓ 購入動画リンクをクリックしました');
-        await page.waitForTimeout(3000); // ページ遷移待ち
+        await new Promise(r => setTimeout(r, 3000)); // ページ遷移待ち
       } else {
         console.log('   ⚠️  購入動画リンクが見つかりません');
       }
@@ -292,7 +292,7 @@ async function main() {
 
         if (fullscreenClicked && fullscreenClicked.clicked) {
           console.log(`   ✓ 画面を最大化しました`);
-          await page.waitForTimeout(1000);
+          await new Promise(r => setTimeout(r, 1000));
         } else {
           console.log('   ⚠️  最大化ボタンが見つかりません。手動で最大化してください。');
         }

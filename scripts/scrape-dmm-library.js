@@ -120,7 +120,7 @@ async function loadAllItems(page) {
       console.log(`   ✓ 「もっと見る」ボタンをクリックしました (${clickCount}回目)`);
 
       // 新しいアイテムがロードされるまで待機
-      await page.waitForTimeout(CONFIG.clickDelay);
+      await new Promise(r => setTimeout(r, CONFIG.clickDelay));
 
       // 新しいアイテム数を取得
       const newItemCount = await page.evaluate(() => {
@@ -139,7 +139,7 @@ async function loadAllItems(page) {
         }
 
         // 少し長めに待ってリトライ
-        await page.waitForTimeout(CONFIG.clickDelay * 2);
+        await new Promise(r => setTimeout(r, CONFIG.clickDelay * 2));
       } else {
         console.log(`   ✓ ${newItemCount - currentItemCount}件の新しいアイテムが読み込まれました`);
         consecutiveNoChangeCount = 0;

@@ -249,7 +249,7 @@ async function loadAllItems(page) {
       clickCount++;
       console.log(`   ✓ 「もっと見る」ボタンをクリックしました (${clickCount}回目)`);
 
-      await page.waitForTimeout(CONFIG.clickDelay);
+      await new Promise(r => setTimeout(r, CONFIG.clickDelay));
 
       const { count: newItemCount } = await countItems(page);
 
@@ -262,7 +262,7 @@ async function loadAllItems(page) {
           break;
         }
 
-        await page.waitForTimeout(CONFIG.clickDelay * 2);
+        await new Promise(r => setTimeout(r, CONFIG.clickDelay * 2));
       } else {
         console.log(`   ✓ ${newItemCount - currentItemCount}件の新しいアイテムが読み込まれました`);
         consecutiveNoChangeCount = 0;
@@ -311,7 +311,7 @@ async function openMyListPanel(page) {
     throw new Error('「マイリスト」ボタンが見つかりませんでした');
   }
 
-  await page.waitForTimeout(1500);
+  await new Promise(r => setTimeout(r, 1500));
   console.log('✓ マイリストパネルを開きました');
 }
 
@@ -348,7 +348,7 @@ async function scrapeListNames(page) {
         panel.scrollTop += 200;
       }
     });
-    await page.waitForTimeout(300);
+    await new Promise(r => setTimeout(r, 300));
   }
 
   // リスト名を取得
@@ -433,7 +433,7 @@ async function closeMyListPanel(page) {
     }
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   });
-  await page.waitForTimeout(500);
+  await new Promise(r => setTimeout(r, 500));
 }
 
 /**
@@ -457,7 +457,7 @@ async function scrapeProductCodes(page) {
     });
   });
 
-  await page.waitForTimeout(1000);
+  await new Promise(r => setTimeout(r, 1000));
 
   // DOM構造をデバッグ出力
   const debugInfo = await page.evaluate(() => {
@@ -698,7 +698,7 @@ async function main() {
       try {
         // リストページに遷移
         await page.goto(listItem.href, { waitUntil: 'networkidle2' });
-        await page.waitForTimeout(1000);
+        await new Promise(r => setTimeout(r, 1000));
 
         // 「もっと見る」で全アイテムをロード
         await loadAllItems(page);

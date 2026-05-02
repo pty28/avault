@@ -169,7 +169,7 @@ async function loadAllItems(page) {
       console.log(`   ⏳ データ読み込み待機中...`);
 
       // 最初の5秒は確実に待つ
-      await page.waitForTimeout(5000);
+      await new Promise(r => setTimeout(r, 5000));
 
       // その後、アイテム数が変わるまで最大10秒待機
       let newItemCount = currentItemCount;
@@ -182,7 +182,7 @@ async function loadAllItems(page) {
         if (newItemCount > currentItemCount) {
           break;
         }
-        await page.waitForTimeout(500);
+        await new Promise(r => setTimeout(r, 500));
       }
 
       // アイテム数が増えているか確認
@@ -197,7 +197,7 @@ async function loadAllItems(page) {
 
         // さらに長く待機してリトライ
         console.log(`   ⏳ 再度待機中...`);
-        await page.waitForTimeout(8000);
+        await new Promise(r => setTimeout(r, 8000));
       } else {
         console.log(`   ✓ ${newItemCount - currentItemCount}件の新しいアイテムが読み込まれました (${currentItemCount} → ${newItemCount})`);
         consecutiveNoChangeCount = 0;

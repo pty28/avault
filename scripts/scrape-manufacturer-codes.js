@@ -51,12 +51,12 @@ async function scrapeManufacturerCodeFromPage(page, contentId, itemURL) {
         await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: CONFIG.timeout });
       } catch (e) {
         // ナビゲーションが発生しない場合もあるため、タイムアウトは無視
-        await page.waitForTimeout(2000);
+        await new Promise(r => setTimeout(r, 2000));
       }
     }
 
     // ページ読み込み完了を確保（リダイレクト後のコンテンツ読み込み待機）
-    await page.waitForTimeout(CONFIG.waitAfterLoad);
+    await new Promise(r => setTimeout(r, CONFIG.waitAfterLoad));
 
     // 最終的なURLを確認（リダイレクト検出）
     const finalUrl = page.url();
@@ -73,7 +73,7 @@ async function scrapeManufacturerCodeFromPage(page, contentId, itemURL) {
         await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: CONFIG.timeout });
 
         // リダイレクト前のコンテンツで短めに待機
-        await page.waitForTimeout(800);
+        await new Promise(r => setTimeout(r, 800));
       } catch (e) {
         // リダイレクト後のコンテンツで取得を試みる
       }
@@ -255,7 +255,7 @@ async function main() {
     });
 
     // プライベートコンテキストを作成（クッキーやセッション状態を共有しない）
-    browserContext = await browser.createIncognitoBrowserContext();
+    browserContext = await browser.createBrowserContext();
 
     // dmm-library.json を読み込み
     console.log(`📂 ${CONFIG.inputFile} を読み込み中...\n`);

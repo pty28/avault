@@ -232,7 +232,7 @@ async function main() {
 
       if (historyLinkClicked) {
         console.log('   ✓ 購入履歴リンクをクリックしました');
-        await page.waitForTimeout(3000); // ページ遷移待ち
+        await new Promise(r => setTimeout(r, 3000)); // ページ遷移待ち
       } else {
         console.log('   ⚠️  購入履歴リンクが見つかりません');
       }
