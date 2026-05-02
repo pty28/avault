@@ -29,7 +29,9 @@ const libraryFile = fileArgIndex !== -1 && args[fileArgIndex + 1]
   : path.join(__dirname, '..', '..', 'data', 'dmm-library.json');
 
 // --file と値を除いた残りの引数
-const remainingArgs = args.filter((_, i) => i !== fileArgIndex && i !== fileArgIndex + 1);
+const remainingArgs = fileArgIndex !== -1
+  ? args.filter((_, i) => i !== fileArgIndex && i !== fileArgIndex + 1)
+  : args;
 
 if (remainingArgs.length < 2) {
   console.error('\n❌ 使用方法:');
@@ -62,7 +64,7 @@ try {
   const data = JSON.parse(fs.readFileSync(libraryFile, 'utf-8'));
 
   // productCode に一致するアイテムを探す
-  const itemIndex = data.findIndex(item => item.productCode === productCode);
+  const itemIndex = data.findIndex(item => item.productCode.toLowerCase() === productCode.toLowerCase());
 
   if (itemIndex === -1) {
     console.error(`\n❌ エラー: productCode "${productCode}" が見つかりません\n`);
