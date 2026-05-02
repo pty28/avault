@@ -35,3 +35,9 @@ test-*
 # Auto-generated viewer files
 contents/viewer-data.js
 contents/presets-data.js
+contents/tag-definitions-data.js
+contents/tags-data.js
+data/caribbean-library.json
+data/dmm-library.json
+data/mgstage-library.json
+data/vrack-library.json
