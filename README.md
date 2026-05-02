@@ -200,11 +200,6 @@ collection_list/
 │   ├── run-all.js                    # 全ソース（DMM + MGStage + VRACK + カリビアン）を順次実行
 │   ├── serve-viewer.js               # ビューワー用HTTPサーバー（女優API統合済み）
 │   │
-│   ├── actress-db/                   # 女優別名DBの更新用スクリプト（Python）
-│   │   ├── shared/                   # 共通モジュール（database.py）
-│   │   ├── scraper/                  # スクレイパー実装
-│   │   └── pyproject.toml            # Python依存関係
-│   │
 │   ├── utils/                        # ユーティリティスクリプト
 │   │   ├── generate-viewer.js        # viewer-data.js, presets-data.js等を生成
 │   │   ├── list-makers.js            # メーカー一覧を抽出
@@ -542,7 +537,8 @@ npm run serve
 ## 🔧 開発環境
 
 - Node.js 18以上
-- Puppeteer 21.0.0
+- Puppeteer 24.0.0
+- sqlite3 6.0.1
 
 ## 📜 ライセンス
 
