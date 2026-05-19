@@ -642,7 +642,32 @@
 
         // ============ Initialize ============
 
-        function init() {
+        async function applyUrlParams() {
+            var params = new URLSearchParams(window.location.search);
+            var q = params.get('q');
+            var deep = params.get('deep');
+
+            if (deep === '1' || deep === 'true') {
+                deepSearchCheckbox.checked = true;
+            }
+
+            if (q) {
+                searchInput.value = q;
+                clearSearchBtn.style.display = 'block';
+
+                if (deepSearchCheckbox.checked) {
+                    var originalTerms = q.trim().split(/[,\s]+/).filter(function(t) { return t.length > 0; });
+                    if (originalTerms.length > 0) {
+                        cachedSearchTerms = await expandSearchTermsWithDeepSearch(originalTerms);
+                        searchInput.value = cachedSearchTerms.join(' ');
+                    }
+                }
+            }
+
+            applyFilters();
+        }
+
+        async function init() {
             totalCountEl.textContent = allData.length.toLocaleString();
             var withActresses = allData.filter(function(item) { return item.actresses && item.actresses.length > 0; }).length;
             withActressesCountEl.textContent = withActresses.toLocaleString();
@@ -650,7 +675,7 @@
             initPresets();
             populateTagFilterSelect();
             setupEventListeners();
-            applyFilters();
+            await applyUrlParams();
         }
 
         // ============ Event Listeners ============

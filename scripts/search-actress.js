@@ -751,7 +751,7 @@ async function fetchFromAdultWiki(productCode, page) {
 // productCode Mode Handler
 // =====================================================================
 
-async function handleProductCodeMode(productCode) {
+async function handleProductCodeMode(productCode, isMGStage = false) {
   let browser;
   try {
     // 末尾の "AI" を削除
@@ -796,11 +796,16 @@ async function handleProductCodeMode(productCode) {
       process.exit(1);
     }
 
-    // Manufacturer Code を生成
-    const mc = generateManufacturerCode(productCode);
-    if (!mc) {
-      console.error(`❌ Manufacturer Code を生成できません\n`);
-      process.exit(1);
+    // Manufacturer Code を決定（MGStage は productCode = manufacturerCode なので変換しない）
+    let mc;
+    if (isMGStage) {
+      mc = productCode.toLowerCase();
+    } else {
+      mc = generateManufacturerCode(productCode);
+      if (!mc) {
+        console.error(`❌ Manufacturer Code を生成できません\n`);
+        process.exit(1);
+      }
     }
 
     const page = await browser.newPage();
@@ -808,46 +813,57 @@ async function handleProductCodeMode(productCode) {
 
     let result = { actresses: [] };
 
-    // 優先順位: avwikidb.com → av-wiki.net → adult-wiki.net → shiroutowiki.work → jav321.com
+    // 優先順位: avwikidb.com → av-wiki.net → [av-wiki.net(productCode) DMM のみ] → adult-wiki.net → shiroutowiki.work → jav321.com
     console.log('   🌐 avwikidb.com から取得中...');
     const avwikidbResult = await fetchFromAvwikidb(mc, page);
     console.log(`     📊 ${avwikidbResult.actresses.length}件`);
     if (avwikidbResult.actresses.length > 0) {
       result = { source: 'avwikidb', actresses: avwikidbResult.actresses };
-    } else {
+    }
+
+    if (result.actresses.length === 0) {
       console.log('   🌐 av-wiki.net から取得中...');
       const avwikiResult = await fetchFromAvWiki(mc, page);
       console.log(`     📊 ${avwikiResult.actresses.length}件`);
       if (avwikiResult.actresses.length > 0) {
         result = { source: 'av-wiki.net', actresses: avwikiResult.actresses };
-      } else {
-        console.log('   🌐 av-wiki.net から再取得中（productCode）...');
-        const avwikiResultProductCode = await fetchFromAvWiki(productCode.toLowerCase(), page);
-        console.log(`     📊 ${avwikiResultProductCode.actresses.length}件`);
-        if (avwikiResultProductCode.actresses.length > 0) {
-          result = { source: 'av-wiki.net', actresses: avwikiResultProductCode.actresses };
-        } else {
-          console.log('   🌐 adult-wiki.net から取得中...');
-          const adultwikiResult = await fetchFromAdultWiki(productCode, page);
-          console.log(`     📊 ${adultwikiResult.actresses.length}件`);
-          if (adultwikiResult.actresses.length > 0) {
-            result = { source: 'adult-wiki.net', actresses: adultwikiResult.actresses };
-          } else {
-            console.log('   🌐 shiroutowiki.work から取得中...');
-            const shiroutozResult = await fetchFromShiroutowiki(productCode, page);
-            console.log(`     📊 ${shiroutozResult.actresses.length}件`);
-            if (shiroutozResult.actresses.length > 0) {
-              result = { source: 'shiroutowiki.work', actresses: shiroutozResult.actresses };
-            } else {
-              console.log('   🌐 jav321.com から取得中...');
-              const jav321Result = await fetchFromJav321(productCode, browser);
-              console.log(`     📊 ${jav321Result.actresses.length}件`);
-              if (jav321Result.actresses.length > 0) {
-                result = { source: 'jav321.com', actresses: jav321Result.actresses };
-              }
-            }
-          }
-        }
+      }
+    }
+
+    // DMM のみ: productCode で再試行（MGStage は productCode = mc なのでスキップ）
+    if (!isMGStage && result.actresses.length === 0) {
+      console.log('   🌐 av-wiki.net から再取得中（productCode）...');
+      const avwikiResultProductCode = await fetchFromAvWiki(productCode.toLowerCase(), page);
+      console.log(`     📊 ${avwikiResultProductCode.actresses.length}件`);
+      if (avwikiResultProductCode.actresses.length > 0) {
+        result = { source: 'av-wiki.net', actresses: avwikiResultProductCode.actresses };
+      }
+    }
+
+    if (result.actresses.length === 0) {
+      console.log('   🌐 adult-wiki.net から取得中...');
+      const adultwikiResult = await fetchFromAdultWiki(productCode, page);
+      console.log(`     📊 ${adultwikiResult.actresses.length}件`);
+      if (adultwikiResult.actresses.length > 0) {
+        result = { source: 'adult-wiki.net', actresses: adultwikiResult.actresses };
+      }
+    }
+
+    if (result.actresses.length === 0) {
+      console.log('   🌐 shiroutowiki.work から取得中...');
+      const shiroutozResult = await fetchFromShiroutowiki(productCode, page);
+      console.log(`     📊 ${shiroutozResult.actresses.length}件`);
+      if (shiroutozResult.actresses.length > 0) {
+        result = { source: 'shiroutowiki.work', actresses: shiroutozResult.actresses };
+      }
+    }
+
+    if (result.actresses.length === 0) {
+      console.log('   🌐 jav321.com から取得中...');
+      const jav321Result = await fetchFromJav321(productCode, browser);
+      console.log(`     📊 ${jav321Result.actresses.length}件`);
+      if (jav321Result.actresses.length > 0) {
+        result = { source: 'jav321.com', actresses: jav321Result.actresses };
       }
     }
 
@@ -916,6 +932,9 @@ async function main() {
     ? path.resolve(args[fileArgIndex + 1])
     : path.join(__dirname, '../data/dmm-library.json');
 
+  // MGStage は productCode = manufacturerCode なので変換・リトライ不要
+  const isMGStage = libraryFile.includes('mgstage');
+
   // productCode が引数で指定されているかチェック（-- で始まらない最初の引数、--file の値は除く）
   const productCode = args.find((arg, i) => {
     if (arg.startsWith('--')) return false;
@@ -945,7 +964,7 @@ async function main() {
   try {
     // productCode モード時は独立して処理（dmm-library.json に依存しない）
     if (productCode) {
-      await handleProductCodeMode(productCode);
+      await handleProductCodeMode(productCode, isMGStage);
       return;
     }
 
@@ -1061,7 +1080,7 @@ async function main() {
       let mc = item.manufacturerCode;
       let generatedMC = null;
 
-      if (!mc || mc === '' || mc === 'TOP100' || (mc && /^BEST\d+$/.test(mc))) {
+      if (!isMGStage && (!mc || mc === '' || mc === 'TOP100' || (mc && /^BEST\d+$/.test(mc)))) {
         // manufacturerCode がない場合、TOP100 の場合、または BEST[0-9]+ の場合は生成
         generatedMC = generateManufacturerCode(item.productCode);
         if (!generatedMC) {
@@ -1133,8 +1152,8 @@ async function main() {
           };
         }
 
-        // av-wiki.net にも見つからない場合は productCode（小文字化）で再試行
-        if (result.count === 0) {
+        // av-wiki.net にも見つからない場合は productCode（小文字化）で再試行（DMM のみ）
+        if (!isMGStage && result.count === 0) {
           console.log('   🌐 av-wiki.net から再取得中（productCode）...');
           const avwikiResultProductCode = await fetchFromAvWiki(item.productCode.toLowerCase(), page);
           console.log(`     📊 ${avwikiResultProductCode.actresses.length}件`);
@@ -1248,8 +1267,8 @@ async function main() {
           item.actresses = result.actresses;
           updatedCount++;
 
-          // 生成した MC を保存（データが見つかった場合のみ）
-          if (generatedMC && !item.manufacturerCode) {
+          // 生成した MC を保存（データが見つかった場合のみ、DMM のみ）
+          if (!isMGStage && generatedMC && !item.manufacturerCode) {
             item.manufacturerCode = generatedMC;
             generatedMCCount++;
           }
