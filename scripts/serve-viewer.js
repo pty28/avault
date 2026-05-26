@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
 
 const contentsDir = path.join(__dirname, '../contents');
@@ -44,6 +45,7 @@ function jsonResponse(res, statusCode, data) {
 }
 
 const PORT = 8000;
+const startedAt = new Date();
 const ALLOWED_ORIGINS = new Set([
     `http://localhost:${PORT}`,
     `http://127.0.0.1:${PORT}`,
@@ -60,6 +62,11 @@ function validateOrigin(req, requirePost) {
         return origin && ALLOWED_ORIGINS.has(origin);
     }
     return !origin || ALLOWED_ORIGINS.has(origin);
+}
+
+function isLocalRequest(req) {
+    const addr = req.socket.remoteAddress;
+    return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
 }
 
 /**
@@ -273,6 +280,83 @@ const server = http.createServer(async (req, res) => {
         } catch (e) {
             jsonResponse(res, 400, { success: false, error: e.message });
         }
+        return;
+    }
+
+    // GET /api/status - サーバー状態を返す
+    if (req.method === 'GET' && req.url === '/api/status') {
+        if (!isLocalRequest(req)) {
+            jsonResponse(res, 403, { success: false, error: 'Forbidden: localhost only' });
+            return;
+        }
+        const uptimeMs = Date.now() - startedAt.getTime();
+        const uptimeSec = Math.floor(uptimeMs / 1000);
+        const hours = Math.floor(uptimeSec / 3600);
+        const minutes = Math.floor((uptimeSec % 3600) / 60);
+        const seconds = uptimeSec % 60;
+        const uptimeStr = hours > 0
+            ? `${hours}h ${minutes}m ${seconds}s`
+            : minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+
+        let viewerDataPath = path.join(contentsDir, 'viewer-data.js');
+        let itemCount = null;
+        try {
+            const content = fs.readFileSync(viewerDataPath, 'utf-8');
+            const match = content.match(/総アイテム数.*?(\d+)件/);
+            if (!match) {
+                const arrayMatch = content.match(/\{/g);
+                itemCount = arrayMatch ? arrayMatch.length - 1 : null;
+            }
+        } catch { /* ignore */ }
+
+        const viewerDataStat = (() => {
+            try { return fs.statSync(viewerDataPath); } catch { return null; }
+        })();
+
+        jsonResponse(res, 200, {
+            status: 'running',
+            url: `http://localhost:${PORT}/`,
+            pid: process.pid,
+            startedAt: startedAt.toISOString(),
+            uptime: uptimeStr,
+            database: db ? 'connected' : 'not found',
+            viewerDataUpdatedAt: viewerDataStat ? viewerDataStat.mtime.toISOString() : null,
+        });
+        return;
+    }
+
+    // POST /api/stop - サーバーをグレースフルシャットダウン
+    if (req.method === 'POST' && req.url === '/api/stop') {
+        if (!isLocalRequest(req)) {
+            jsonResponse(res, 403, { success: false, error: 'Forbidden: localhost only' });
+            return;
+        }
+        jsonResponse(res, 200, { success: true, message: 'Server shutting down' });
+        console.log('🛑 /api/stop received — shutting down...');
+        res.socket.once('finish', () => {
+            if (db) db.close(() => server.close(() => process.exit(0)));
+            else server.close(() => process.exit(0));
+        });
+        return;
+    }
+
+    // POST /api/reload - generate-viewer を再実行してデータファイルを更新
+    if (req.method === 'POST' && req.url === '/api/reload') {
+        if (!isLocalRequest(req)) {
+            jsonResponse(res, 403, { success: false, error: 'Forbidden: localhost only' });
+            return;
+        }
+        const generateScript = path.join(__dirname, 'utils/generate-viewer.js');
+        console.log('🔄 /api/reload received — running generate-viewer...');
+        execFile(process.execPath, [generateScript], { cwd: path.join(__dirname, '..') }, (err, stdout, stderr) => {
+            if (err) {
+                console.error('generate-viewer failed:', stderr);
+                jsonResponse(res, 500, { success: false, error: stderr || err.message });
+                return;
+            }
+            console.log(stdout.trim());
+            jsonResponse(res, 200, { success: true, output: stdout.trim() });
+        });
         return;
     }
 

@@ -156,6 +156,31 @@ async function loadAllItems(page) {
 }
 
 /**
+ * productCode を DMM CID 形式に正規化する
+ * 例: 49FN00008 → 49FN08（数値サフィックスの先頭ゼロを除去、最低2桁）
+ * h_ prefix や通常コードには影響しない
+ */
+function normalizeDmmProductCode(code) {
+  if (!code) return code;
+  const m = code.match(/^(\d+[A-Za-z]+)(0+)(\d+)$/);
+  if (m) {
+    const num = parseInt(m[2] + m[3], 10);
+    return m[1] + String(num).padStart(2, '0');
+  }
+  return code;
+}
+
+/**
+ * 正規化済みコード（例: 49FN08）からサムネイル形式（49FN00008）を生成
+ * existingSet のルックアップ用安全網として使用
+ */
+function paddedEquivalent(code) {
+  const m = code.match(/^(\d+[A-Za-z]+)(\d{2,4})$/);
+  if (!m) return null;
+  return m[1] + String(parseInt(m[2], 10)).padStart(5, '0');
+}
+
+/**
  * thumbnail URLからproductCodeを抽出
  */
 function extractProductCodeFromThumbnail(src) {
@@ -210,7 +235,18 @@ async function extractPlayerUrlFromDetailPage(page, expectedProductCode) {
       return { success: false, error: 'URLの抽出に失敗' };
     }
 
-    return { success: true, playerUrls };
+    // モーダル内の detail リンクから正式な CID を取得
+    let cidFromModal = null;
+    const detailLinks = document.querySelectorAll('a[href*="cid="]');
+    for (const a of detailLinks) {
+      const m = a.href.match(/cid=([^/&]+)/i);
+      if (m && m[1]) {
+        cidFromModal = m[1];
+        break;
+      }
+    }
+
+    return { success: true, playerUrls, cidFromModal };
   });
 
   // 抽出したURLのpidが期待するproductCodeと一致するか検証
@@ -253,14 +289,19 @@ async function waitForModalWithPid(page, expectedProductCode, timeoutMs = 8000) 
 /**
  * 同一ブラウザセッション内で表示中の商品一覧からプレイヤーURLを取得
  */
-async function fetchPlayerUrlsInSession(page, libraryData, forceMode) {
+async function fetchPlayerUrlsInSession(page, libraryData, forceMode, cidMap = new Map()) {
   console.log('\n🎬 プレイヤーURL取得を開始...');
 
   // 取得済み商品のセット（forceMode時はスキップしない）
+  // paddedEquivalent で正規化済みコードのパディング形式も含める安全網
   const existingSet = new Set(
     forceMode ? [] : libraryData
       .filter(item => item.playerUrls && item.playerUrls.length > 0)
-      .map(item => item.productCode)
+      .flatMap(item => {
+        const code = item.productCode;
+        const padded = paddedEquivalent(code);
+        return padded ? [code, padded] : [code];
+      })
   );
 
   // 一覧ページの全商品を取得
@@ -279,14 +320,18 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode) {
 
   for (let i = 0; i < productImages.length; i++) {
     const product = productImages[i];
-    const productCode = extractProductCodeFromThumbnail(product.src);
+    const thumbCode = extractProductCodeFromThumbnail(product.src);
     const progress = `[${i + 1}/${productImages.length}]`;
 
-    if (!productCode) {
+    if (!thumbCode) {
       console.log(`   ${progress} ⚠️  productCode抽出失敗`);
       failCount++;
       continue;
     }
+
+    // API マップに正規 CID があればそちらを productCode として使用
+    const apiCid = cidMap.get(thumbCode.toLowerCase());
+    const productCode = apiCid ? apiCid.toUpperCase() : thumbCode;
 
     // 【VR】タイトルはスキップ
     if (product.alt.includes('【VR】')) {
@@ -325,7 +370,7 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode) {
           }
         }
         return false;
-      }, productCode);
+      }, thumbCode);
 
       if (!clicked) {
         console.log(`   ${progress} ⚠️  クリック失敗: ${productCode}`);
@@ -334,7 +379,8 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode) {
       }
 
       // 正しい商品のモーダルが表示されるまで待機（pid検証付き）
-      const modalOpened = await waitForModalWithPid(page, productCode);
+      // モーダルの pid はサムネイル形式（パディングあり）なので thumbCode を使用
+      const modalOpened = await waitForModalWithPid(page, thumbCode);
       if (!modalOpened) {
         console.log(`   ${progress} ⚠️  モーダル未表示: ${productCode}`);
         await page.keyboard.press('Escape');
@@ -344,7 +390,7 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode) {
       }
 
       // URLを抽出（pid検証付き）
-      const urlResult = await extractPlayerUrlFromDetailPage(page, productCode);
+      const urlResult = await extractPlayerUrlFromDetailPage(page, thumbCode);
 
       if (urlResult.success) {
         const playerUrls = urlResult.playerUrls.map(url => 'https://www.dmm.co.jp' + url);
@@ -353,6 +399,13 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode) {
         const item = libraryData.find(d => d.productCode === productCode);
         if (item) {
           item.playerUrls = playerUrls;
+
+          // モーダルの detail リンクから取得した CID が異なる場合、productCode を修正
+          const cidFromModal = urlResult.cidFromModal;
+          if (cidFromModal && cidFromModal.toUpperCase() !== productCode) {
+            console.log(`   ${progress} 🔄 productCode 修正: ${productCode} → ${cidFromModal.toUpperCase()}`);
+            item.productCode = cidFromModal.toUpperCase();
+          }
         }
 
         console.log(`   ${progress} ✅ ${productCode} (${playerUrls.length}個)`);
@@ -553,6 +606,20 @@ async function main() {
       });
     });
 
+    // getMemberPurchaseData API レスポンスから pid → cid マップを構築
+    const cidMap = new Map();
+    page.on('response', async (res) => {
+      if (!res.url().includes('getMemberPurchaseData')) return;
+      try {
+        const data = await res.json();
+        if (!Array.isArray(data.purchase_history)) return;
+        for (const entry of data.purchase_history) {
+          const pidKey = entry.pid.replace(/dl\d*$/i, '').toLowerCase();
+          cidMap.set(pidKey, entry.cid.toLowerCase());
+        }
+      } catch {}
+    });
+
     // DMMマイライブラリページにアクセス
     console.log(`📄 ${CONFIG.targetUrl} にアクセスしています...\n`);
     await page.goto(CONFIG.targetUrl, { waitUntil: 'networkidle2' });
@@ -617,6 +684,44 @@ async function main() {
       });
     });
 
+    // cidMap が空（IndexedDB キャッシュあり → API 未呼び出し）の場合 IndexedDB から補完
+    if (cidMap.size === 0) {
+      const idbData = await page.evaluate(async () => {
+        try {
+          const dbs = await indexedDB.databases();
+          const purchaseDb = dbs.find(db => db.name && db.name.startsWith('dig_purchase_history_v1_'));
+          if (!purchaseDb) return [];
+          return new Promise((resolve) => {
+            const req = indexedDB.open(purchaseDb.name);
+            req.onsuccess = (event) => {
+              const db = event.target.result;
+              const tx = db.transaction('purchase_history', 'readonly');
+              const store = tx.objectStore('purchase_history');
+              const getAllReq = store.getAll();
+              getAllReq.onsuccess = () => resolve(getAllReq.result);
+              getAllReq.onerror = () => resolve([]);
+            };
+            req.onerror = () => resolve([]);
+          });
+        } catch {
+          return [];
+        }
+      });
+
+      for (const entry of idbData) {
+        const pid = entry.product_id || entry.pid;
+        const cid = entry.content_id || entry.cid;
+        if (pid && cid) {
+          const pidKey = pid.replace(/dl\d*$/i, '').toLowerCase();
+          cidMap.set(pidKey, cid.toLowerCase());
+        }
+      }
+
+      if (cidMap.size > 0) {
+        console.log(`   📦 IndexedDB から CIDマップを構築: ${cidMap.size}件\n`);
+      }
+    }
+
     // 作品情報を抽出
     const scrapedData = await extractLibraryData(page);
 
@@ -632,6 +737,22 @@ async function main() {
         console.log(`   ℹ️  既存ファイルが見つかりません。新規作成します。`);
       } else {
         console.log(`   ⚠️  既存ファイルの読み込みに失敗: ${error.message}`);
+      }
+    }
+
+    // cidMap に基づいて productCode を正規化（例: 49FN00008 → 49FN08）
+    if (cidMap.size > 0) {
+      console.log(`   🗺  CIDマップ: ${cidMap.size}件`);
+      for (const item of [...scrapedData, ...existingData]) {
+        if (!item.productCode) continue;
+        const apiCid = cidMap.get(item.productCode.toLowerCase());
+        if (apiCid && apiCid.toUpperCase() !== item.productCode) {
+          item.productCode = apiCid.toUpperCase();
+          // CID修正済みアイテムは fetch-info で再取得させる
+          item.isFetched = false;
+          item.actresses = [];
+          item.itemURL = '';
+        }
       }
     }
 
@@ -672,7 +793,7 @@ async function main() {
     console.log(`   ファイル: ${CONFIG.outputFile}\n`);
 
     // プレイヤーURL取得処理（同一ブラウザセッションで実行）
-    await fetchPlayerUrlsInSession(page, mergedData, forceMode);
+    await fetchPlayerUrlsInSession(page, mergedData, forceMode, cidMap);
 
     // playerUrls を含めて再保存
     await fs.writeFile(

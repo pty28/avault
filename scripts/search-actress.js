@@ -464,9 +464,12 @@ async function fetchFromJav321(productCode, browser) {
               if (text.startsWith(':') || text.startsWith('：')) {
                 const nameText = text.replace(/^[:：]\s*/, '').trim();
                 if (nameText && nameText.length > 0 && !nameText.includes('メーカー')) {
-                  performerNames.push(nameText);
+                  // スペース（NBSP含む）区切りで複数名の可能性あり
+                  const parts = nameText.split(/[  ]+/).map(n => n.trim()).filter(n => n.length > 0);
+                  performerNames.push(...parts);
+                  break;
                 }
-                break;
+                // 空の場合（": " のみ）は break せず次のノードへ続ける
               }
             } else if (currentNode.nodeType === Node.ELEMENT_NODE) {
               const el = currentNode;
@@ -500,11 +503,12 @@ async function fetchFromJav321(productCode, browser) {
           const performerMatch = pageText.match(/出演者[:\：]\s*(.+?)(?:\n|メーカー|$)/);
           if (performerMatch) {
             const names = performerMatch[1].trim();
-            // 複数の出演者の場合は「、」で分割
+            // 「、」またはスペース（NBSP含む）で分割
             if (names.includes('、')) {
               performerNames = names.split('、').map(n => n.trim()).filter(n => n.length > 0);
             } else if (names.length > 0) {
-              performerNames = [names];
+              const parts = names.split(/[  ]+/).map(n => n.trim()).filter(n => n.length > 0);
+              performerNames = parts.length > 1 ? parts : [names.trim()];
             }
           }
         }

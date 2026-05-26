@@ -6,7 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 
 詳細仕様・ルールは以下のファイルを参照すること：
 
-- **ルール**: [`.claude/rules.md`](.claude/rules.md) — 実装時の必須ルール（スクレイプ前DOM調査など）
 - **スクレイピング仕様**: [`docs/specs/scraping.md`](docs/specs/scraping.md) — 各スクレイパー・ユーティリティの詳細
 - **ビューワー仕様**: [`docs/specs/viewer.md`](docs/specs/viewer.md) — viewer.html・タグ・プリセットの詳細
 
@@ -86,17 +85,8 @@ collection_list/
 │   │
 │   ├── utils/
 │   │   ├── generate-viewer.js      # viewer-data.js 等を自動生成
-│   │   ├── list-no-actresses.js    # 女優情報未取得アイテムの一覧
-│   │   ├── list-all-actresses.js   # 全ユニーク女優一覧
 │   │   ├── search-products-by-actress.js
-│   │   ├── list-no-itemurl.js
-│   │   ├── list-makers.js
-│   │   ├── list-labels.js
-│   │   ├── list-genres.js
-│   │   ├── list-many-player-urls.js
-│   │   ├── check-duplicate-player-urls.js
-│   │   ├── update-performers.js
-│   │   └── ...
+│   │   └── update-performers.js
 │   │
 │   └── debug/                      # 調査用スクリプト（実装完了後は削除する）
 │
@@ -116,8 +106,8 @@ collection_list/
 │   └── tags-data.js                # 自動生成（generate-viewer）
 │
 ├── docs/
-│   ├── rules.md                    # 実装ルール
 │   └── specs/
+│       ├── actress-api.md          # 女優別名検索 API 仕様
 │       ├── scraping.md             # スクレイピング仕様
 │       └── viewer.md               # ビューワー仕様
 │
@@ -212,16 +202,18 @@ npm run scrape-mgstage              # MGStage スクレイプ（1ページ目）
 npm run scrape-mgstage-full         # 全ページ
 npm run search-actress-mgstage      # MGStage 向け女優検索
 npm run scrape-vrack                # VRACK スクレイプ
-npm run search-actress-vrack        # VRACK 向け女優検索
-npm run search-actress-1pondo       # 一本道向け女優検索
+node scripts/search-actress.js --file data/vrack-library.json      # VRACK（Hey動画・一本道）向け女優検索
 npm run scrape-caribbean            # カリビアンスクレイプ
-npm run search-actress-caribbean     # カリビアン向け女優検索
+node scripts/search-actress.js --file data/caribbean-library.json  # カリビアン向け女優検索
 ```
 
 ### Viewer
 
 ```bash
-npm run serve                       # 生成 + HTTP サーバー起動（http://localhost:8000）
+npm run serve-start                 # 生成 + HTTP サーバーをバックグラウンド起動（http://localhost:8000）
+npm run serve-status                # サーバー稼働状況・PID を確認
+npm run serve-reload                # データ再生成 + リロード
+npm run serve-stop                  # サーバーを停止
 npm run viewer                      # 生成 + viewer.html を直接開く
 npm run generate-viewer             # データファイルのみ生成
 ```
@@ -234,13 +226,7 @@ npm run search-actress -- --force
 npm run search-actress -- --jewel
 npm run search-actress -- --file data/mgstage-library.json  # または mgstage-library.json（CWDから）
 npm run search-actress-mgstage      # MGStage向け女優検索
-npm run search-actress-vrack        # VRACK向け女優検索
-npm run search-actress-1pondo       # 一本道向け女優検索
-npm run search-actress-caribbean    # カリビアン向け女優検索
-npm run list-no-actresses           # 女優情報未取得アイテムの一覧
-npm run list-no-actresses -- --csv
-npm run list-all-actresses          # 全ユニーク女優一覧
-npm run list-all-actresses -- --csv
+node scripts/search-actress.js --file data/vrack-library.json      # VRACK（Hey動画・一本道）向け女優検索
 npm run search-products-by-actress -- "女優名"
 npm run search-products-by-actress -- "女優名1,女優名2" --all
 npm run update-performers -- VERO00129 "女優名1,女優名2"           # DMM
@@ -248,10 +234,4 @@ npm run update-performers-mgstage -- SIRO05588 "女優名"            # MGStage
 npm run update-performers-vrack -- heydouga_123456 "女優名"        # VRACK
 npm run update-performers-1pondo -- 1pondo_123456 "女優名"         # 一本道
 npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリビアン
-npm run list-makers
-npm run list-labels
-npm run list-genres
-npm run list-many-player-urls
-npm run check-duplicate-player-urls
-npm run test-api
 ```

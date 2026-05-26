@@ -27,7 +27,7 @@ DMM、MGStage、VRACK（Hey動画・一本道・HEYZO）、カリビアンなど
 npm run help
 
 # ビューワーを起動（推奨）
-npm run serve          # http://localhost:8000 でサーバー起動
+npm run serve-start    # http://localhost:8000 でバックグラウンド起動
 
 # すべてのスクレイパーを実行
 npm run run-all
@@ -140,7 +140,7 @@ API ID なしでも、各サイトの作品情報（コード・タイトル・�
 スクレイピングが完了したら、ビューワーを起動します。
 
 ```bash
-npm run serve
+npm run serve-start
 ```
 
 ブラウザで `http://localhost:8000` を開くと、全ソースの作品を検索・管理できます。
@@ -165,11 +165,11 @@ rm -rf .puppeteer-profiles/d2pass
 ### よくあるトラブル
 
 **Q: スクレイピング実行時にエラーが出た**
-- A: ネットワーク接続を確認し、`npm run test-api` で DMM API 接続テストを実行
+- A: ネットワーク接続を確認し、DMM API 接続テストは `npm run fetch-info` で動作確認できます
 
 **Q: ビューワーが開かない / データが表示されない**
 - A: 以下を確認
-  1. `npm run serve` が実行中か
+  1. `npm run serve-start` が実行済みか（`npm run serve-status` で確認）
   2. `http://localhost:8000` (推奨) でアクセスしているか
   3. ブラウザコンソール (F12) にエラーがないか
 
@@ -181,7 +181,7 @@ rm -rf .puppeteer-profiles/d2pass
   ```
 
 **Q: タグが編集できない**
-- A: ファイルモード（`file://`）では読み取り専用です。`npm run serve` でサーバーモード起動してください。
+- A: ファイルモード（`file://`）では読み取り専用です。`npm run serve-start` でサーバーモード起動してください。
 
 **Q: セッション保持が機能しない**
 - A: `.puppeteer-profiles/` ディレクトリが正しく保存されているか確認。削除されていれば、再度ログインしてください。
@@ -202,11 +202,8 @@ collection_list/
 │   │
 │   ├── utils/                        # ユーティリティスクリプト
 │   │   ├── generate-viewer.js        # viewer-data.js, presets-data.js等を生成
-│   │   ├── list-makers.js            # メーカー一覧を抽出
-│   │   ├── list-labels.js            # レーベル一覧を抽出
-│   │   ├── list-no-actresses.js      # 女優情報が未入力の作品を一覧
-│   │   ├── update-performers.js      # 女優情報を手動更新
-│   │   └── ...
+│   │   ├── search-products-by-actress.js
+│   │   └── update-performers.js      # 女優情報を手動更新
 │   │
 │   └── debug/                        # デバッグ・テストスクリプト
 │
@@ -244,7 +241,10 @@ DMM・VRACK・MGStage・カリビアンの全作品を統一表示・検索・�
 
 **サーバーモード（推奨・タグ編集可能）:**
 ```bash
-npm run serve
+npm run serve-start    # バックグラウンドでサーバー起動
+npm run serve-status   # 稼働状況・起動時刻・PID を確認
+npm run serve-reload   # データ更新後にビューワーデータを再読み込み
+npm run serve-stop     # サーバーを停止
 ```
 → `http://localhost:8000` でアクセス
 
@@ -258,6 +258,7 @@ npm run viewer
 
 - **全ソース統一表示**: DMM・VRACK・MGStage・カリビアンの作品を1つのビューワーで検索
 - **検索・フィルター**: 女優名・タイトル・製品コード・メーカー・レーベルで検索
+- **タグフィルター**: 「タグ を含む」ドロップダウンで複数タグをAND絞り込み
 - **タグ機能**: カスタムタグを作成して作品を管理（サーバーモード時のみ編集可）
 - **プリセット検索**: よく検索するキーワードを事前登録
 - **ソースバッジ**: MGStageアイテムにMGS、VRACKにHEY/HEYZO/1P、カリビアンにCBNバッジを表示
@@ -279,6 +280,12 @@ npm run viewer
 詳細は [actress-api.md](docs/specs/actress-api.md) を参照。
 
 ### タグ機能
+
+**タグでフィルタリング:**
+- 検索バー横の「タグ を含む」ドロップダウンをクリック
+- 表示されたリストから1つ以上のタグを選択（AND絞り込み）
+- 「タグなし」を選択すると、タグが未割り当ての作品だけを表示
+- 選択中はボタンに「タグ: N件選択中」と表示、✕ ボタンでリセット
 
 **タグ定義の編集:**
 - ビューワーの「タグ管理」ボタン → タグの追加・削除・色変更
@@ -425,16 +432,15 @@ npm run search-actress-mgstage        # Web から女優情報取得
 #### VRACK
 
 ```bash
-npm run scrape-vrack                  # スクレイピング
-npm run search-actress-vrack          # Hey動画向け女優検索
-npm run search-actress-1pondo         # 一本道向け女優検索
+npm run scrape-vrack                                                              # スクレイピング
+node scripts/search-actress.js --file data/vrack-library.json                    # VRACK（Hey動画・一本道）向け女優検索
 ```
 
 #### カリビアン
 
 ```bash
-npm run scrape-caribbean              # スクレイピング
-npm run search-actress-caribbean       # カリビアン向け女優検索
+npm run scrape-caribbean                                                          # スクレイピング
+node scripts/search-actress.js --file data/caribbean-library.json                # カリビアン向け女優検索
 ```
 
 #### DMM マイリストからのタグ取得（オプション）
@@ -472,7 +478,7 @@ npm run update-performers-vrack -- heydouga_123456 "女優名"
 npm run search-actress                # DMM対象
 npm run search-actress -- --force     # 既存データも再取得
 npm run search-actress-mgstage        # MGStage対象
-npm run search-actress-vrack          # VRACK対象
+node scripts/search-actress.js --file data/vrack-library.json    # VRACK対象
 ```
 
 詳細：[scraping.md](docs/specs/scraping.md)
@@ -498,7 +504,7 @@ npm run run-all
 ### 日常利用
 
 ```bash
-npm run serve
+npm run serve-start
 ```
 
 ビューワーを起動して作品を検索・管理します。
@@ -509,9 +515,7 @@ npm run serve
 
 ### 大量処理時の注意
 
-- **最初にテスト**: `npm run test-api` で API 接続を確認
 - **バックアップ**: 初回実行前に重要なファイルをバックアップ
-- **進捗確認**: `npm run check` で取得状況を定期確認
 
 ### API レート制限
 
@@ -522,7 +526,7 @@ npm run serve
 
 - `dmm-library.json` は上書き保存される
 - `isFetched: true` のアイテムは `--force` 使用時でもスキップされる
-- タグデータはサーバーモード（`npm run serve`）でのみ編集可能
+- タグデータはサーバーモード（`npm run serve-start`）でのみ編集可能
 
 ---
 

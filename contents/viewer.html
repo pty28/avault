@@ -121,15 +121,25 @@
                             <option value="caribbean">カリビアン</option>
                         </select>
                     </div>
-                    <div class="flex gap-1 items-center">
-                        <label class="text-xs text-gray-400 whitespace-nowrap">タグ:</label>
-                        <select
-                            id="tagFilterSelect"
-                            class="px-2 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-xs text-gray-100 focus:outline-none focus:border-blue-500"
-                        >
-                            <option value="">すべて</option>
-                            <option value="__none__">タグなし</option>
-                        </select>
+                    <!-- Tag filter dropdown (multi-select AND) -->
+                    <div class="relative" id="tagFilterWrapper">
+                        <div class="flex items-stretch bg-gray-700 border border-gray-600 rounded-lg overflow-hidden text-xs">
+                            <button id="tagFilterToggle" class="flex items-center gap-1 px-2 py-1.5 text-gray-100 hover:bg-gray-600 transition-colors">
+                                <span id="tagFilterLabel">タグ を含む</span>
+                                <svg class="w-3 h-3 text-gray-400 transition-transform" id="tagFilterChevron" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <button id="tagFilterClear" class="px-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-600 border-l border-gray-600 transition-colors hidden" title="クリア">✕</button>
+                        </div>
+                        <!-- Dropdown panel -->
+                        <div id="tagFilterPanel" class="absolute top-full left-0 mt-1 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 hidden">
+                            <div class="p-2">
+                                <input id="tagFilterSearch" type="text" placeholder="1つ以上のオプションを選択..." autocomplete="off"
+                                    class="w-full px-2 py-1.5 bg-gray-900 border border-blue-500 rounded text-xs text-gray-100 placeholder-gray-500 focus:outline-none">
+                            </div>
+                            <div id="tagFilterList" class="overflow-y-auto max-h-64 py-1">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
                     </div>
                     <label class="flex items-center gap-1 cursor-pointer whitespace-nowrap">
                         <input
@@ -318,7 +328,7 @@
         let tagAssignments = (typeof TAGS !== 'undefined') ? Object.assign({}, TAGS) : {};
         let selectMode = false;
         let selectedItems = new Set();
-        let activeTagFilter = '';
+        let activeTagFilters = new Set();
         let activeSourceFilter = '';
 
         // Elements
@@ -331,7 +341,14 @@
         const viewModeSelect = document.getElementById('viewModeSelect');
         const presetSelect = document.getElementById('presetSelect');
         const sourceFilterSelect = document.getElementById('sourceFilterSelect');
-        const tagFilterSelect = document.getElementById('tagFilterSelect');
+        const tagFilterWrapper = document.getElementById('tagFilterWrapper');
+        const tagFilterToggle = document.getElementById('tagFilterToggle');
+        const tagFilterPanel = document.getElementById('tagFilterPanel');
+        const tagFilterSearch = document.getElementById('tagFilterSearch');
+        const tagFilterList = document.getElementById('tagFilterList');
+        const tagFilterClear = document.getElementById('tagFilterClear');
+        const tagFilterLabel = document.getElementById('tagFilterLabel');
+        const tagFilterChevron = document.getElementById('tagFilterChevron');
         const cardContainer = document.getElementById('cardContainer');
         const tableBody = document.getElementById('tableBody');
         const cardView = document.getElementById('cardView');
@@ -383,16 +400,76 @@
             return badge;
         }
 
-        function populateTagFilterSelect() {
-            while (tagFilterSelect.options.length > 2) {
-                tagFilterSelect.remove(2);
+        function buildTagFilterRow(tag, label, color) {
+            var row = document.createElement('label');
+            row.className = 'tag-filter-row flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-700 transition-colors';
+            row.dataset.tag = tag;
+
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'w-3.5 h-3.5 rounded accent-blue-500 cursor-pointer flex-shrink-0';
+            cb.checked = activeTagFilters.has(tag);
+
+            var badge = document.createElement('span');
+            badge.className = 'text-xs px-1.5 py-0.5 rounded font-medium text-white';
+            badge.textContent = label;
+            if (color) {
+                badge.style.backgroundColor = color;
+            } else {
+                badge.className += ' bg-gray-500';
             }
+
+            row.appendChild(cb);
+            row.appendChild(badge);
+            return row;
+        }
+
+        function populateTagFilterButtons() {
+            while (tagFilterList.firstChild) tagFilterList.removeChild(tagFilterList.firstChild);
+
+            tagFilterList.appendChild(buildTagFilterRow('__none__', 'タグなし', null));
+
+            var divider = document.createElement('div');
+            divider.className = 'tag-filter-divider border-t border-gray-700 my-1';
+            tagFilterList.appendChild(divider);
+
             tagDefinitions.forEach(function(def) {
-                var option = document.createElement('option');
-                option.value = def.name;
-                option.textContent = def.name;
-                tagFilterSelect.appendChild(option);
+                tagFilterList.appendChild(buildTagFilterRow(def.name, def.name, def.color || '#6b7280'));
             });
+        }
+
+        function filterTagList(query) {
+            var q = query.toLowerCase();
+            tagFilterList.querySelectorAll('.tag-filter-row').forEach(function(row) {
+                var tag = row.dataset.tag;
+                var visible = tag === '__none__' || tag.toLowerCase().indexOf(q) !== -1;
+                row.style.display = visible ? '' : 'none';
+            });
+            var divider = tagFilterList.querySelector('.tag-filter-divider');
+            if (divider) divider.style.display = q ? 'none' : '';
+        }
+
+        function updateTagFilterUI() {
+            var hasSelection = activeTagFilters.size > 0;
+            tagFilterLabel.textContent = hasSelection ? 'タグ: ' + activeTagFilters.size + '件選択中' : 'タグ を含む';
+            tagFilterClear.classList.toggle('hidden', !hasSelection);
+
+            tagFilterList.querySelectorAll('.tag-filter-row').forEach(function(row) {
+                row.querySelector('input[type=checkbox]').checked = activeTagFilters.has(row.dataset.tag);
+            });
+        }
+
+        function openTagFilterPanel() {
+            tagFilterPanel.classList.remove('hidden');
+            tagFilterChevron.style.transform = 'rotate(180deg)';
+            tagFilterSearch.value = '';
+            filterTagList('');
+            tagFilterSearch.focus();
+        }
+
+        function closeTagFilterPanel() {
+            tagFilterPanel.classList.add('hidden');
+            tagFilterChevron.style.transform = '';
         }
 
         // ============ API Helpers ============
@@ -634,7 +711,7 @@
             var result = await apiSaveTagDefinitions(cleaned);
             if (result.success) {
                 tagDefinitions = cleaned;
-                populateTagFilterSelect();
+                populateTagFilterButtons();
                 closeTagManageModal();
                 renderCurrentPage();
             }
@@ -673,7 +750,7 @@
             withActressesCountEl.textContent = withActresses.toLocaleString();
 
             initPresets();
-            populateTagFilterSelect();
+            populateTagFilterButtons();
             setupEventListeners();
             await applyUrlParams();
         }
@@ -707,9 +784,50 @@
                 activeSourceFilter = e.target.value;
                 applyFilters();
             });
-            tagFilterSelect.addEventListener('change', function(e) {
-                activeTagFilter = e.target.value;
+            tagFilterToggle.addEventListener('click', function() {
+                if (tagFilterPanel.classList.contains('hidden')) {
+                    openTagFilterPanel();
+                } else {
+                    closeTagFilterPanel();
+                }
+            });
+
+            tagFilterClear.addEventListener('click', function(e) {
+                e.stopPropagation();
+                activeTagFilters.clear();
+                updateTagFilterUI();
                 applyFilters();
+            });
+
+            tagFilterSearch.addEventListener('input', function() {
+                filterTagList(this.value);
+            });
+
+            tagFilterList.addEventListener('change', function(e) {
+                var cb = e.target;
+                if (cb.type !== 'checkbox') return;
+                var row = cb.closest('.tag-filter-row');
+                if (!row) return;
+                var tag = row.dataset.tag;
+                if (tag === '__none__') {
+                    activeTagFilters.clear();
+                    if (cb.checked) activeTagFilters.add('__none__');
+                } else {
+                    activeTagFilters.delete('__none__');
+                    if (cb.checked) {
+                        activeTagFilters.add(tag);
+                    } else {
+                        activeTagFilters.delete(tag);
+                    }
+                }
+                updateTagFilterUI();
+                applyFilters();
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!tagFilterWrapper.contains(e.target)) {
+                    closeTagFilterPanel();
+                }
             });
             deepSearchCheckbox.addEventListener('change', async function() {
                 cachedSearchTerms = [];
@@ -854,13 +972,15 @@
                     if (allowedSources.indexOf(item.source) === -1) return false;
                 }
 
-                // Tag filter
-                if (activeTagFilter) {
+                // Tag filter (AND: 選択されたタグをすべて持つアイテムのみ表示)
+                if (activeTagFilters.size > 0) {
                     var itemTags = getItemTags(item.productCode);
-                    if (activeTagFilter === '__none__') {
+                    if (activeTagFilters.has('__none__')) {
                         if (itemTags.length > 0) return false;
                     } else {
-                        if (itemTags.indexOf(activeTagFilter) === -1) return false;
+                        for (var t of activeTagFilters) {
+                            if (itemTags.indexOf(t) === -1) return false;
+                        }
                     }
                 }
 
