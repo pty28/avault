@@ -231,17 +231,8 @@ curl "http://localhost:8000/list"
 
 ## データベース更新
 
-スクレイピングで DB を再生成する場合：
-
-```bash
-cd scripts/actress-db
-uv sync
-uv run python -m scraper.scraper
-# 完了後
-cp actresses.db ../../data/
-```
-
-詳細は [`README.md`](../../README.md) の「女優DB更新」セクションを参照。
+`data/actresses.db` は外部スクレイパーで生成した SQLite ファイルを配置する。
+更新方法は [`README.md`](../../README.md) の「女優DB更新」セクションを参照。
 
 ---
 
@@ -251,3 +242,5 @@ cp actresses.db ../../data/
 - 1人の女優が複数の別名を持つことがあります
 - `/search` は別名の完全一致検索のみ（部分一致・あいまい検索は非対応）
 - ビューワーの Deep Search 機能を有効にすると、自動的にこれらの API を呼び出し、別名を本名に変換・展開します
+
+<!-- last-documented-commit: de18498 -->

@@ -63,7 +63,7 @@ rm -rf .puppeteer-profiles/d2pass     # Hey動画・カリビアン（D2Pass統�
 
 1. `npm run run-all-dmm` — DMM full pipeline
 2. `npm run run-all-mgs` — MGStage full pipeline
-3. `npm run scrape-heydouga` — Hey動画 scraping
+3. `npm run scrape-vrack` — VRACK（Hey動画・一本道）scraping
 4. `npm run scrape-caribbean` — カリビアン scraping
 
 ```bash
@@ -115,9 +115,12 @@ Puppeteer を使用して DMM マイライブラリをスクレイピングす�
 1. ブラウザを起動してDMMライブラリにアクセス
 2. fullMode時は「もっと見る」ボタンを全クリック
 3. サムネイルURLから製品コード・タイトルを抽出（`ps.jpg` / `js.jpg` 両対応）
-4. `data/dmm-library.json` に保存（初期フィールド: `productCode`, `title`, `actresses[]`, `thumbnail`, `itemURL`, `isFetched: false`, `isShirouto: false`, `registeredAt`）
-5. 既存データとマージして重複を避ける（インクリメンタル更新）
-6. **同一ブラウザセッション内**でplayerURLを取得：
+4. `getMemberPurchaseData` APIレスポンス（またはIndexedDBキャッシュ）から `cidMap` を構築し productCode を正規化
+   - サムネイル形式コード（例: `sone00258`）→ DMM内部CID への変換マップ
+   - 同一CIDが複数アイテムに割り当たる場合はバンドルCIDと判断してスキップ
+5. `data/dmm-library.json` に保存（初期フィールド: `productCode`, `title`, `actresses[]`, `thumbnail`, `itemURL`, `isFetched: false`, `isShirouto: false`, `registeredAt`）
+6. 既存データとマージして重複を避ける（インクリメンタル更新）
+7. **同一ブラウザセッション内**でplayerURLを取得：
    - サムネイルをクリック → `waitForModalWithPid()` で正しいモーダルを待機 → `a[onclick*="window.open"]` URLを抽出 → Escapeを押下
    - `playerUrls` 配列として保存（複数パート対応）
    - `【VR】` タイトルはスキップ
@@ -130,6 +133,7 @@ Puppeteer を使用して DMM マイライブラリをスクレイピングす�
 - 前の作品のモーダルが残留することによるレースコンディションを防止
 - `extractPlayerUrlFromDetailPage()` でも pid 検証を二重チェック
 - URL取得後は Escape + 500ms 待機（次の `waitForModalWithPid` が遷移を担保）
+- **productCode はモーダル内リンクでは上書きしない**（詳細リンクが別作品を指す場合があるため）
 
 ---
 
@@ -243,12 +247,13 @@ JavaScript関数 `LoadMyPageBodyPPV(n)` を `page.evaluate()` で呼び出す。
 
 ---
 
-## Hey動画 Scraper (`scrape-heydouga.js`)
+## VRACK Scraper (`scrape-vrack.js`)
 
-Hey動画の購入済み動画をスクレイピングする。事前ログインが必要。
+VRACK（Hey動画・一本道・HEYZO）の購入済み動画をスクレイピングする。事前ログインが必要。
 
-- 出力: `data/heydouga-library.json`
+- 出力: `data/vrack-library.json`
 - playerUrlは単数形（`playerUrl`）で保存。`generate-viewer.js` が配列化する。
+- `generate-viewer.js` でのソースフィールドは `'heydouga'`。
 
 ---
 
@@ -442,3 +447,5 @@ npm run scrape-caribbean -- --force
 - 各商品ページは個別タブで取得（インクリメンタル更新対応）
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
+
+<!-- last-documented-commit: de18498 -->
