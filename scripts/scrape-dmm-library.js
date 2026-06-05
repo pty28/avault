@@ -235,18 +235,7 @@ async function extractPlayerUrlFromDetailPage(page, expectedProductCode) {
       return { success: false, error: 'URLの抽出に失敗' };
     }
 
-    // モーダル内の detail リンクから正式な CID を取得
-    let cidFromModal = null;
-    const detailLinks = document.querySelectorAll('a[href*="cid="]');
-    for (const a of detailLinks) {
-      const m = a.href.match(/cid=([^/&]+)/i);
-      if (m && m[1]) {
-        cidFromModal = m[1];
-        break;
-      }
-    }
-
-    return { success: true, playerUrls, cidFromModal };
+    return { success: true, playerUrls };
   });
 
   // 抽出したURLのpidが期待するproductCodeと一致するか検証
@@ -293,14 +282,19 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode, cidMap = n
   console.log('\n🎬 プレイヤーURL取得を開始...');
 
   // 取得済み商品のセット（forceMode時はスキップしない）
-  // paddedEquivalent で正規化済みコードのパディング形式も含める安全網
+  // paddedEquivalent + 保存済みサムネイルURLからのコードも含める安全網
+  // （cidMapが不完全な場合でも正しくスキップできるようにする）
   const existingSet = new Set(
     forceMode ? [] : libraryData
       .filter(item => item.playerUrls && item.playerUrls.length > 0)
       .flatMap(item => {
         const code = item.productCode;
         const padded = paddedEquivalent(code);
-        return padded ? [code, padded] : [code];
+        const thumbFromStored = extractProductCodeFromThumbnail(item.thumbnail || '');
+        const codes = [code];
+        if (padded && padded !== code) codes.push(padded);
+        if (thumbFromStored && thumbFromStored !== code) codes.push(thumbFromStored);
+        return codes;
       })
   );
 
@@ -399,13 +393,6 @@ async function fetchPlayerUrlsInSession(page, libraryData, forceMode, cidMap = n
         const item = libraryData.find(d => d.productCode === productCode);
         if (item) {
           item.playerUrls = playerUrls;
-
-          // モーダルの detail リンクから取得した CID が異なる場合、productCode を修正
-          const cidFromModal = urlResult.cidFromModal;
-          if (cidFromModal && cidFromModal.toUpperCase() !== productCode) {
-            console.log(`   ${progress} 🔄 productCode 修正: ${productCode} → ${cidFromModal.toUpperCase()}`);
-            item.productCode = cidFromModal.toUpperCase();
-          }
         }
 
         console.log(`   ${progress} ✅ ${productCode} (${playerUrls.length}個)`);
@@ -740,28 +727,50 @@ async function main() {
       }
     }
 
-    // cidMap に基づいて productCode を正規化（例: 49FN00008 → 49FN08）
+    // cidMap に基づいて scrapedData の productCode を正規化（サムネイル形式 → 正規 CID）
+    // existingData は変更しない（先祖還り・重複防止のため）
     if (cidMap.size > 0) {
       console.log(`   🗺  CIDマップ: ${cidMap.size}件`);
-      for (const item of [...scrapedData, ...existingData]) {
+
+      // 同一 apiCid が複数 item に割り当たる場合はバンドル購入CIDのため正規化をスキップ
+      const apiCidCount = new Map();
+      for (const item of scrapedData) {
+        if (!item.productCode) continue;
+        const apiCid = cidMap.get(item.productCode.toLowerCase());
+        if (apiCid) apiCidCount.set(apiCid, (apiCidCount.get(apiCid) || 0) + 1);
+      }
+
+      for (const item of scrapedData) {
         if (!item.productCode) continue;
         const apiCid = cidMap.get(item.productCode.toLowerCase());
         if (apiCid && apiCid.toUpperCase() !== item.productCode) {
+          if (apiCidCount.get(apiCid) > 1) {
+            console.log(`   ⚠️  CIDマップ: ${item.productCode} → ${apiCid.toUpperCase()} をスキップ（バンドルCID: ${apiCidCount.get(apiCid)}件が同一CID）`);
+            continue;
+          }
           item.productCode = apiCid.toUpperCase();
-          // CID修正済みアイテムは fetch-info で再取得させる
-          item.isFetched = false;
-          item.actresses = [];
-          item.itemURL = '';
         }
       }
     }
 
-    // 既存のproductCodeをSetに格納（大文字小文字を区別しない比較のため小文字化）
+    // 既存のproductCodeをSetに格納（パディング形式・サムネイル形式・cidMap正規形も含める）
     const existingCodes = new Set(
       existingData
-        .map(item => item.productCode)
-        .filter(code => code) // 空のコードを除外
-        .map(code => code.toLowerCase())
+        .filter(item => item.productCode)
+        .flatMap(item => {
+          const code = item.productCode.toLowerCase();
+          const codes = [code];
+          // cidMap の正規形（scrapedData が正規化済みでも重複検出できるよう）
+          const canonical = cidMap.get(code);
+          if (canonical && canonical !== code) codes.push(canonical);
+          // paddedEquivalent（正規形 → パディング形式）
+          const padded = paddedEquivalent(item.productCode);
+          if (padded) codes.push(padded.toLowerCase());
+          // サムネイル URL から抽出したコード
+          const thumbCode = extractProductCodeFromThumbnail(item.thumbnail || '');
+          if (thumbCode) codes.push(thumbCode.toLowerCase());
+          return codes;
+        })
     );
 
     // 新規データのみをフィルタ

@@ -224,6 +224,26 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // POST /api/favorites - お気に入りリストを保存
+    if (req.method === 'POST' && req.url === '/api/favorites') {
+        if (!validateOrigin(req, true)) {
+            jsonResponse(res, 403, { success: false, error: 'Forbidden: invalid Origin' });
+            return;
+        }
+        try {
+            const body = await parseBody(req);
+            if (!Array.isArray(body)) throw new Error('invalid payload');
+            const filePath = path.join(contentsDir, 'favorites.json');
+            fs.writeFileSync(filePath, JSON.stringify(body, null, 2), 'utf-8');
+            const dataPath = path.join(contentsDir, 'favorites-data.js');
+            fs.writeFileSync(dataPath, `const FAVORITES = ${safeJsonForScript(body)};`, 'utf-8');
+            jsonResponse(res, 200, { success: true });
+        } catch (e) {
+            jsonResponse(res, 400, { success: false, error: e.message });
+        }
+        return;
+    }
+
     // POST /api/tags/bulk - タグを一括割り当て/解除
     if (req.method === 'POST' && req.url === '/api/tags/bulk') {
         if (!validateOrigin(req, true)) {

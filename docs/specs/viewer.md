@@ -16,6 +16,7 @@
 | `contents/presets-data.js` | `contents/presets.json` | プリセット検索定義 |
 | `contents/tag-definitions-data.js` | `contents/tag-definitions.json` | タグ定義（名前＋色） |
 | `contents/tags-data.js` | `contents/tags.json` | タグ割り当て（productCode → タグ名配列） |
+| `contents/favorites-data.js` | `contents/favorites.json` | お気に入りリスト（productCode 配列） |
 
 **これらのファイルは直接編集しない。**
 
@@ -59,6 +60,7 @@ npm run viewer           # 生成 + viewer.html を直接開く
 - **ソースフィルター**: DMM / MGStage / Hey動画 / カリビアン で絞り込み
 - **女優情報なし**: 女優情報未取得のアイテムのみ表示
 - **タグフィルター**: すべて / タグなし / 各タグ名で絞り込み
+- **お気に入りのみ**: ♥ お気に入り登録済みのアイテムのみ表示
 
 ### ソースバッジ
 
@@ -133,6 +135,30 @@ Body: { "productCodes": [], "addTags": [], "removeTags": [] }
 
 ---
 
+## Favorites System
+
+### データ構造
+
+- **お気に入りリスト** (`contents/favorites.json`): `["productCode1", "productCode2", ...]`（UIで管理）
+
+### UI 操作
+
+- カード表示のサムネイル右下に ♡ アイコンが常時表示される
+- クリックで ♥（赤）に切り替わり、お気に入り登録される
+- 再クリックで ♡ に戻り、登録解除される
+- フィルターバーの「♥ お気に入りのみ」チェックボックスで絞り込み可能
+
+### 永続化
+
+- サーバーモード（`npm run serve`）: `POST /api/favorites` でディスクに即時保存
+- ファイルモード（`file://`）: ブラウザの `localStorage`（`viewer_favorites`）にフォールバック
+
+### テーブルビューとの関係
+
+テーブル表示にはハートアイコンを表示しない。フィルタリングは `applyFilters()` 経由で共通動作する。
+
+---
+
 ## Preset System
 
 - ユーザー編集ファイル: `contents/presets.json`
@@ -163,6 +189,9 @@ Body: { "productCodes": [], "addTags": [], "removeTags": [] }
 **タグ管理 API**
 - `POST /api/tag-definitions`: `tag-definitions.json` と `tag-definitions-data.js` を更新
 - `POST /api/tags/bulk`: `tags.json` と `tags-data.js` を更新
+
+**お気に入り API**
+- `POST /api/favorites`: Body = `string[]`（productCode 配列）。`favorites.json` と `favorites-data.js` を更新
 
 **女優別名検索 API**（Deep Search で使用）
 - `GET /search?alias=<別名>`: 別名からメイン名を検索

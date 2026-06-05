@@ -103,7 +103,9 @@ collection_list/
 │   ├── viewer-data.js              # 自動生成（generate-viewer）
 │   ├── presets-data.js             # 自動生成（generate-viewer）
 │   ├── tag-definitions-data.js     # 自動生成（generate-viewer）
-│   └── tags-data.js                # 自動生成（generate-viewer）
+│   ├── tags-data.js                # 自動生成（generate-viewer）
+│   ├── favorites.json              # お気に入りリスト（UIで管理）
+│   └── favorites-data.js           # 自動生成（generate-viewer）
 │
 ├── docs/
 │   └── specs/

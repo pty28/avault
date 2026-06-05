@@ -35,6 +35,26 @@
         .select-mode .card-hover {
             cursor: pointer;
         }
+        .fav-btn {
+            position: absolute;
+            bottom: 6px;
+            right: 6px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.55);
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, transform 0.1s;
+            z-index: 10;
+        }
+        .fav-btn:hover { background: rgba(0,0,0,0.8); transform: scale(1.15); }
+        .fav-btn.active { color: #ef4444; }
+        .fav-btn:not(.active) { color: rgba(255,255,255,0.75); }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100">
@@ -156,6 +176,14 @@
                             class="w-3.5 h-3.5 rounded bg-gray-700 border-gray-600 focus:ring-2 focus:ring-blue-500"
                         >
                         <span class="text-xs">無修正のみ</span>
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+                        <input
+                            type="checkbox"
+                            id="filterFavorites"
+                            class="w-3.5 h-3.5 rounded bg-gray-700 border-gray-600 focus:ring-2 focus:ring-blue-500"
+                        >
+                        <span class="text-xs">♥ お気に入りのみ</span>
                     </label>
                     <label class="flex items-center gap-1 cursor-pointer whitespace-nowrap">
                         <input
@@ -292,6 +320,7 @@
     <script src="presets-data.js"></script>
     <script src="tag-definitions-data.js"></script>
     <script src="tags-data.js"></script>
+    <script src="favorites-data.js"></script>
 
     <script>
         // safeOpen: URL のスキームを検証してから window.open する
@@ -330,12 +359,45 @@
         let selectedItems = new Set();
         let activeTagFilters = new Set();
         let activeSourceFilter = '';
+        let favorites = new Set(
+            typeof FAVORITES !== 'undefined' ? FAVORITES
+            : JSON.parse(localStorage.getItem('viewer_favorites') || '[]')
+        );
+
+        async function saveFavorites() {
+            const list = [...favorites];
+            try {
+                const res = await fetch('/api/favorites', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(list)
+                });
+                if (!res.ok) throw new Error('server error');
+            } catch {
+                localStorage.setItem('viewer_favorites', JSON.stringify(list));
+            }
+        }
+
+        function toggleFavorite(productCode, btn) {
+            if (favorites.has(productCode)) {
+                favorites.delete(productCode);
+                btn.classList.remove('active');
+                btn.textContent = '♡';
+            } else {
+                favorites.add(productCode);
+                btn.classList.add('active');
+                btn.textContent = '♥';
+            }
+            saveFavorites();
+            if (filterFavorites.checked) applyFilters();
+        }
 
         // Elements
         const searchInput = document.getElementById('searchInput');
         const clearSearchBtn = document.getElementById('clearSearchBtn');
         const filterNoActresses = document.getElementById('filterNoActresses');
         const filterUncensored = document.getElementById('filterUncensored');
+        const filterFavorites = document.getElementById('filterFavorites');
         const sortSelect = document.getElementById('sortSelect');
         const toggleSortOrder = document.getElementById('toggleSortOrder');
         const viewModeSelect = document.getElementById('viewModeSelect');
@@ -780,6 +842,7 @@
             });
             filterNoActresses.addEventListener('change', applyFilters);
             filterUncensored.addEventListener('change', applyFilters);
+            filterFavorites.addEventListener('change', applyFilters);
             sourceFilterSelect.addEventListener('change', function(e) {
                 activeSourceFilter = e.target.value;
                 applyFilters();
@@ -955,6 +1018,7 @@
             var searchInput_value = searchInput.value.toLowerCase();
             var onlyNoActresses = filterNoActresses.checked;
             var onlyUncensored = filterUncensored.checked;
+            var onlyFavorites = filterFavorites.checked;
 
             var searchTerms = cachedSearchTerms.length > 0
                 ? cachedSearchTerms
@@ -965,6 +1029,7 @@
             filteredData = allData.filter(function(item) {
                 if (onlyNoActresses && item.actresses && item.actresses.length > 0) return false;
                 if (onlyUncensored && !item.isUncensored) return false;
+                if (onlyFavorites && !favorites.has(item.productCode)) return false;
 
                 // Source filter (複数値対応: カンマ区切り)
                 if (activeSourceFilter) {
@@ -1141,6 +1206,19 @@
                 };
 
                 thumbDiv.appendChild(img);
+
+                // Favorite heart button
+                var favBtn = document.createElement('button');
+                favBtn.className = 'fav-btn' + (favorites.has(item.productCode) ? ' active' : '');
+                favBtn.textContent = favorites.has(item.productCode) ? '♥' : '♡';
+                favBtn.title = 'お気に入り';
+                favBtn.addEventListener('click', (function(currentItem, btn) {
+                    return function(e) {
+                        e.stopPropagation();
+                        toggleFavorite(currentItem.productCode, btn);
+                    };
+                })(item, favBtn));
+                thumbDiv.appendChild(favBtn);
 
                 if (!selectMode) {
                     var openBtn = document.createElement('div');

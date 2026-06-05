@@ -123,6 +123,18 @@ try {
     console.log(`⚠️  tags.json が見つからないため空のタグデータで生成しました`);
 }
 
+// Generate favorites-data.js from favorites.json
+const favoritesPath = path.join(__dirname, '../../contents/favorites.json');
+const favoritesDataPath = path.join(contentsFolderPath, 'favorites-data.js');
+try {
+    const favs = JSON.parse(fs.readFileSync(favoritesPath, 'utf-8'));
+    fs.writeFileSync(favoritesDataPath, `const FAVORITES = ${safeJsonForScript(favs)};`, 'utf-8');
+    console.log(`✅ favorites-data.js を生成しました`);
+} catch (e) {
+    fs.writeFileSync(favoritesDataPath, 'const FAVORITES = [];', 'utf-8');
+    console.log(`⚠️  favorites.json が見つからないため空のお気に入りデータで生成しました`);
+}
+
 // Statistics
 const totalItems = data.length;
 const itemsWithActresses = data.filter(item => item.actresses && item.actresses.length > 0).length;
