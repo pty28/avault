@@ -243,7 +243,7 @@ async function extractPlayerUrlFromDetailPage(page, expectedProductCode) {
     const expectedPid = expectedProductCode.toLowerCase();
     const firstUrl = result.playerUrls[0];
     const pidMatch = firstUrl.match(/\/pid=([^/]+)\//);
-    if (pidMatch && pidMatch[1] !== expectedPid) {
+    if (pidMatch && !pidMatch[1].startsWith(expectedPid)) {
       return { success: false, error: `pid不一致: 期待=${expectedPid}, 実際=${pidMatch[1]}（前の商品のモーダルが残っている可能性）` };
     }
   }
@@ -267,8 +267,8 @@ async function waitForModalWithPid(page, expectedProductCode, timeoutMs = 8000) 
       return { hasLinks: true, pid: m ? m[1] : null };
     });
 
-    if (result.hasLinks && result.pid === expectedPid) {
-      return true; // 正しい商品のモーダルが開いた
+    if (result.hasLinks && result.pid && result.pid.startsWith(expectedPid)) {
+      return true; // 正しい商品のモーダルが開いた（pid=smus044st のようなサフィックス付きも許容）
     }
     await new Promise(resolve => setTimeout(resolve, 300));
   }
