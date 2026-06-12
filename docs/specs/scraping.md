@@ -129,7 +129,7 @@ Puppeteer を使用して DMM マイライブラリをスクレイピングす�
 ### Player URL Modal Handling (`waitForModalWithPid`)
 
 - `waitForModalWithPid(page, expectedProductCode, timeoutMs)` でモーダル出現を待機
-- DOM をポーリングして `a[onclick*="window.open"]` リンクを確認し、onclick URL内のpidが期待するproductCodeと一致するかを検証
+- DOM をポーリングして `a[onclick*="window.open"]` リンクを確認し、onclick URL内のpidが期待するproductCodeで**前方一致**するかを検証（`pid=smus044st` のようなサフィックス付きも許容）
 - 前の作品のモーダルが残留することによるレースコンディションを防止
 - `extractPlayerUrlFromDetailPage()` でも pid 検証を二重チェック
 - URL取得後は Escape + 500ms 待機（次の `waitForModalWithPid` が遷移を担保）
@@ -448,4 +448,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: de18498 -->
+<!-- last-documented-commit: 8c6a07d -->
