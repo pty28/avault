@@ -68,15 +68,11 @@ AV作品情報（女優名・メーカー・品番等）をDMM/FANZA・MGStage�
 ```
 collection_list/
 ├── scripts/
-│   ├── scrape-dmm-library.js       # DMM ライブラリのスクレイピング + playerURL取得
+│   ├── scrape-dmm-library.js       # DMM ライブラリ取得（GraphQL APIで女優・メーカー・レーベル・品番・playerURLも一括取得）
 │   ├── scrape-mgstage.js           # MGStage 購入済みストリーミング動画のスクレイピング
 │   ├── scrape-vrack.js             # VRACK 購入済み動画のスクレイピング
 │   ├── scrape-caribbean.js         # カリビアン 購入済み動画のスクレイピング
-│   ├── fetch-info.js               # DMM API から女優・メーカー・レーベル情報取得
-│   ├── fetch-player-urls.js        # playerURL 取得（単体実行用）
 │   ├── search-actress.js           # Web から女優情報取得（DMM・MGStage 共用）
-│   ├── fetch-actresses.js          # 女優情報取得（レガシー）
-│   ├── scrape-manufacturer-codes.js # メーカー品番取得
 │   ├── run-all.js                  # 全ソース順次実行（DMM + MGStage + Hey動画 + カリビアン）
 │   ├── run-all-dmm.js              # DMM 全スクリプト順次実行
 │   ├── run-all-mgs.js              # MGStage 全スクリプト順次実行
@@ -125,9 +121,12 @@ collection_list/
 
 ## Environment Variables
 
+DMM Affiliate API は不要（女優・メーカー・レーベル・品番・playerURL は `scrape-dmm` が内部 GraphQL API ＋ログインセッションで取得する）。`.env` ではスクレイピング対象サイトのトグルのみ設定する：
+
 ```
-DMM_API_ID=your_api_id_here       # DMM Affiliate API ID（必須）
-DMM_AFFILIATES_ID=xxxxx-990       # DMM Affiliate ID（必須）
+USE_DMM=true        # DMM / FANZA
+USE_MGSTAGE=true    # MGStage
+USE_D2PASS=true     # VRACK（Hey動画・一本道・HEYZO）・カリビアン
 ```
 
 ## ブラウザセッション保持（プロファイル機能）
@@ -178,7 +177,7 @@ rm -rf .puppeteer-profiles/d2pass     # VRACK・カリビアン（D2Pass統一�
 
 ```bash
 npm run run-all               # 全ソース: DMM + MGStage + Hey動画 + カリビアン
-npm run run-all-dmm           # DMM: scrape → fetch-info → manufacturer-codes → search-actress
+npm run run-all-dmm           # DMM: scrape-dmm → search-actress
 npm run run-all-dmm -- --force
 npm run run-all-mgs           # MGStage: scrape → search-actress
 npm run run-all-mgs -- --full --force
@@ -187,14 +186,8 @@ npm run run-all-mgs -- --full --force
 ### DMM Core
 
 ```bash
-npm run scrape-dmm                  # DMM スクレイプ + playerURL（1ページ目）
-npm run scrape-dmm -- --full --force
-npm run fetch-player-urls           # playerURL のみ取得（単体）
-npm run fetch-player-urls-full
-npm run fetch-player-urls-force
-npm run fetch-info                  # 女優・メーカー・レーベル情報（DMM API）
-npm run fetch-info -- --force
-npm run scrape-manufacturer-codes   # メーカー品番
+npm run scrape-dmm                  # DMM スクレイプ（作品情報＋女優・メーカー・レーベル・品番・playerURL を GraphQL API で一括取得）
+npm run scrape-dmm -- --force       # 既存分も含めてメタを再取得
 ```
 
 ### MGStage / VRACK / Caribbean
@@ -237,3 +230,5 @@ npm run update-performers-vrack -- heydouga_123456 "女優名"        # VRACK
 npm run update-performers-1pondo -- 1pondo_123456 "女優名"         # 一本道
 npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリビアン
 ```
+
+<!-- last-documented-commit: 931ef06 -->

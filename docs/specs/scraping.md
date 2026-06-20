@@ -72,17 +72,17 @@ npm run run-all
 
 ### run-all-dmm.js — DMM 全スクリプト実行
 
-DMM の4スクリプトを順次実行する：
+DMM の2スクリプトを順次実行する：
 
-1. `npm run scrape-dmm` — DMM library scraping + playerUrls fetching
-2. `npm run fetch-info` — 女優・メーカー・レーベル情報取得
-3. `npm run scrape-manufacturer-codes` — メーカー品番取得
-4. `npm run search-actress` — Web から女優情報取得
+1. `npm run scrape-dmm` — DMM library scraping（作品情報＋女優・メーカー・レーベル・メーカー品番・playerUrls を内部 GraphQL API で一括取得）
+2. `npm run search-actress` — GraphQL で女優が取得できなかった作品（素人系など）を Web から補完
 
 ```bash
 npm run run-all-dmm
 npm run run-all-dmm -- --force
 ```
+
+> **2026-06 リニューアル後**: scrape-dmm が内部 GraphQL API でメタ情報まで取得するため、旧 `fetch-info` / `scrape-manufacturer-codes` / `fetch-player-urls` / `fetch-actresses` は統合・廃止された。
 
 ### run-all-mgs.js — MGStage 全スクリプト実行
 
@@ -108,66 +108,38 @@ npm run run-all-mgs -- --full --force
 
 ## DMM Library Scraper (`scrape-dmm-library.js`)
 
-Puppeteer を使用して DMM マイライブラリをスクレイピングする。
+> **2026-06 リニューアル対応**: DMM のマイライブラリが React/Tailwind 製 SPA に移行し旧 DOM セレクタ（`mySearchList_*`）が消滅したため、内部 GraphQL API（`https://api.video.dmm.co.jp/graphql`）を直接叩く方式に全面刷新した。作品情報・女優・メーカー・レーベル・メーカー品番・playerUrls を**この1スクリプトで一括取得**する（旧 `fetch-info` / `scrape-manufacturer-codes` / `fetch-player-urls` を統合・廃止）。
 
 ### 処理フロー
 
-1. ブラウザを起動してDMMライブラリにアクセス
-2. fullMode時は「もっと見る」ボタンを全クリック
-3. サムネイルURLから製品コード・タイトルを抽出（`ps.jpg` / `js.jpg` 両対応）
-4. `getMemberPurchaseData` APIレスポンス（またはIndexedDBキャッシュ）から `cidMap` を構築し productCode を正規化
-   - サムネイル形式コード（例: `sone00258`）→ DMM内部CID への変換マップ
-   - 同一CIDが複数アイテムに割り当たる場合はバンドルCIDと判断してスキップ
-5. `data/dmm-library.json` に保存（初期フィールド: `productCode`, `title`, `actresses[]`, `thumbnail`, `itemURL`, `isFetched: false`, `isShirouto: false`, `registeredAt`）
-6. 既存データとマージして重複を避ける（インクリメンタル更新）
-7. **同一ブラウザセッション内**でplayerURLを取得：
-   - サムネイルをクリック → `waitForModalWithPid()` で正しいモーダルを待機 → `a[onclick*="window.open"]` URLを抽出 → Escapeを押下
-   - `playerUrls` 配列として保存（複数パート対応）
-   - `【VR】` タイトルはスキップ
-   - `playerUrls` が既存の場合はスキップ（`--force` 時を除く）
+1. `https://video.dmm.co.jp/mylibrary/` を開き、保存済みクッキー（`.puppeteer-profiles/dmm-cookies.json`）を復元
+2. `Mylibrary` クエリを1回叩いてログイン判定。未ログインなら手動ログイン → ターミナルで Enter を押すとクッキーを保存
+3. **`Mylibrary` クエリ**で購入済み一覧を全件ページング取得（`limit=120`、取得日時の新しい順）
+   - 取得フィールド: `id`（=品番）, `title`, `packageImage.mediumUrl`, `contentType`, `floor`, `latestViewingRightsAcquiredAt`
+4. 既存データ（`data/dmm-library.json`）とマージし新規分のみ抽出（初期フィールド: `productCode`, `title`, `actresses: []`, `thumbnail`, `itemURL`, `isFetched: false`, `isShirouto: false`, `registeredAt`, 空のメタフィールド）
+   - 重複判定は `normalizeDmmProductCode` / `paddedEquivalent` / `extractProductCodeFromThumbnail` を併用した安全網（例: `49FN00008` ⇄ `49FN08` ⇄ サムネ形）
+5. **`ContentMeta` クエリ**でメタ情報を付与（対象: 新規＋`isFetched:false`、`--force` 時は全件）。連続呼び出しは `metaDelay`（250ms）でスロットル
+   - `makerContentId` → `manufacturerCode`、`maker` → `makerName`/`makerId`、`label` → `labelName`/`labelId`
+   - `actresses[].name` を `cleanActressName`（Alice表記・括弧内別名を整形）して `actresses` に格納
+   - `products` から playerUrls を再構成（後述）
+   - 取得成功で `isFetched: true`
+6. `data/dmm-library.json` に保存（メタ付与の前後で2回書き込み・インクリメンタル更新）
 
-### Player URL Modal Handling (`waitForModalWithPid`)
+> **注**: API 方式ではページングで常に全件を取得するため、旧来の `--full`（1ページ目のみ↔全ページ）の区別はなくなった。フラグは `--force` のみ。
 
-- `waitForModalWithPid(page, expectedProductCode, timeoutMs)` でモーダル出現を待機
-- DOM をポーリングして `a[onclick*="window.open"]` リンクを確認し、onclick URL内のpidが期待するproductCodeで**前方一致**するかを検証（`pid=smus044st` のようなサフィックス付きも許容）
-- 前の作品のモーダルが残留することによるレースコンディションを防止
-- `extractPlayerUrlFromDetailPage()` でも pid 検証を二重チェック
-- URL取得後は Escape + 500ms 待機（次の `waitForModalWithPid` が遷移を担保）
-- **productCode はモーダル内リンクでは上書きしない**（詳細リンクが別作品を指す場合があるため）
+### playerUrls の再構成 (`buildPlayerUrls`)
 
----
+`ContentMeta` の `products`（所有商品＝`utilizationStatus !== NONE`）から配信用 pid を**実データ由来**で特定し、プレイヤーURLを組み立てる：
 
-## Player URL Fetcher (`fetch-player-urls.js`)
+- 素人系（`〜st` サフィックスの product）があればそれを pid に使用（例: `show019` → `show019st`）
+- それ以外は `dl` サフィックスを持たない「素」の product を pid に使用（エイリアス品番対応。例: `cid=61mdb093` でも素 product `61rmd00723` を pid に）
+- いずれも無ければ cid にフォールバック
+- 所有 product ごとに `parent_product_id` を埋めた URL を生成（複数パート対応）
+- VR 作品（`contentType === 'VR'` または `【VR】` タイトル）はプレイヤーURL形式が異なるためスキップ
 
-scrape-dmm-library.js からplayerURL取得を独立させた単体スクリプト。
+> 既存データ3791件で上記ルールにより 100% pid を導出できることを確認済み。
 
-- `waitForModalWithPid` のロジックは scrape-dmm-library.js と共通
-- `data/dmm-library.json` から既存 `playerUrls` を読み込みスキップ判定
-- `--full`: 「もっと見る」で全ページ読み込み後に処理
-- `--force`: 既存 playerUrls を上書き
-- スキップ条件: `【VR】` タイトル、`playerUrls` 既存（`--force` なし時）
-- Enter キー押下後に `process.stdin.pause()` を呼び出してプロセスを正常終了
-
----
-
-## DMM API Integration (`fetch-info.js`)
-
-DMM Affiliate API を使用して女優名・メーカー・レーベル情報を取得する。
-
-### 処理フロー
-
-1. `data/dmm-library.json` を読み込む
-2. 対象フィルタリング:
-   - **通常モード**: `actresses` が空 AND `isFetched: false` のアイテムのみ
-   - **`--force` モード**: productCode があるすべてのアイテム
-3. 各アイテムに対して以下の順で検索:
-   - `floor=videoa`（一般作品）→ 成功時 `isShirouto: false`
-   - 結果なし → `floor=videoc`（素人系）→ 成功時 `isShirouto: true`
-   - 結果なし + productCodeに"00"含む → "00"を1つ除去して `floor=videoa` 再試行（例: `H_152SIL00012` → `h_152sil12`）
-4. 女優名・itemURL・makerName・makerId・labelName・labelId を抽出
-5. `data/dmm-library.json` に書き戻し（`isFetched: true` に更新）
-
-### データ構造
+### データ構造（`data/dmm-library.json`）
 
 ```json
 {
@@ -175,30 +147,20 @@ DMM Affiliate API を使用して女優名・メーカー・レーベル情報�
   "title": "作品タイトル",
   "actresses": ["女優名1", "女優名2"],
   "thumbnail": "https://pics.dmm.co.jp/...",
-  "itemURL": "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=vero00129/",
-  "playerUrls": ["https://www.dmm.co.jp/digital/-/player/.../part=1/"],
+  "itemURL": "https://video.dmm.co.jp/av/content/?id=vero00129",
+  "playerUrls": ["https://www.dmm.co.jp/digital/-/player/=/player=html5/act=playlist/pid=vero00129/view_flag=1/parent_product_id=.../part=1/"],
   "manufacturerCode": "VERO-129",
   "makerName": "メーカー名",
   "makerId": "maker_id_123",
   "labelName": "レーベル名",
   "labelId": "label_id_456",
   "isFetched": true,
-  "isShirouto": false
+  "isShirouto": false,
+  "registeredAt": "2026-04-12T..."
 }
 ```
 
----
-
-## Manufacturer Code Scraper (`scrape-manufacturer-codes.js`)
-
-FANZA 作品ページからメーカー品番を取得する。
-
-- Puppeteer で `video.dmm.co.jp/av/content/` にアクセス
-- 年齢確認ポップアップを自動バイパス
-- ネットワークアイドル後にページをスクレイプ
-- `data/dmm-library.json` の `manufacturerCode` フィールドを更新
-- 既存の `manufacturerCode` があるアイテムはスキップ（安全に再実行可能）
-- 各種フォーマット対応（VERO00129, H_172HMNF00004 等）
+> **注**: `isShirouto` は API 方式では自動分類されず常に `false`（レガシーフィールド）。`isFetched` は新規作成時 `false`、`ContentMeta` 取得成功で `true` に更新される。
 
 ---
 
@@ -313,24 +275,6 @@ VRACK（Hey動画・一本道・HEYZO）の購入済み動画をスクレイピ�
 
 ## Utility Scripts
 
-### list-no-actresses
-
-```bash
-npm run list-no-actresses
-npm run list-no-actresses -- --csv  # → list-no-actresses.csv
-```
-
-女優情報が未取得のアイテムを一覧表示。manufacturerCode を自動生成して表示（TOP100/BEST[0-9]+も生成）。
-
-### list-all-actresses
-
-```bash
-npm run list-all-actresses
-npm run list-all-actresses -- --csv  # → list-all-actresses.csv
-```
-
-全ユニーク女優名を出現回数付きであいうえお順に表示。
-
 ### search-products-by-actress
 
 ```bash
@@ -341,50 +285,16 @@ npm run search-products-by-actress -- "女優名1,女優名2" --all  # AND条件
 
 部分一致で検索。OR条件がデフォルト。AND条件は `--all` フラグ。
 
-### list-makers / list-labels
-
-```bash
-npm run list-makers  # → makers-list.csv
-npm run list-labels  # → labels-list.csv
-```
-
-makerId / labelId でデデュープし、アイテム数付きで一覧表示。
-
-### list-genres
-
-```bash
-npm run list-genres              # videoa + videoc 両方
-npm run list-genres -- 43        # videoa (floor ID: 43) のみ
-npm run list-genres -- 44        # videoc (floor ID: 44) のみ
-npm run list-genres -- --csv     # → list-genres-videoa.csv / list-genres-videoc.csv
-```
-
-DMM API の GenreSearch エンドポイントを使用。`DMM_API_ID` / `DMM_AFFILIATES_ID` が必要。
-
-### list-many-player-urls
-
-```bash
-npm run list-many-player-urls
-npm run list-many-player-urls -- --csv  # → list-many-player-urls.csv
-```
-
-playerUrls が8件以上のアイテムを件数降順で表示。
-
-### check-duplicate-player-urls
-
-```bash
-npm run check-duplicate-player-urls
-```
-
-playerUrl が複数のアイテムに重複している場合を検出して報告。
-
 ### update-performers
 
 ```bash
-npm run update-actresses -- VERO00129 "女優名1,女優名2"
+npm run update-performers -- VERO00129 "女優名1,女優名2"            # DMM
+npm run update-performers-mgstage -- SIRO05588 "女優名"            # MGStage
+npm run update-performers-vrack -- heydouga_123456 "女優名"        # VRACK
+npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリビアン
 ```
 
-特定アイテムの女優情報を手動で更新。コンマ区切りで複数指定可能。
+特定アイテムの女優情報を手動で更新。コンマ区切りで複数指定可能。対象ライブラリは `--file` 付きの派生コマンドで切り替える。
 
 ---
 
@@ -448,4 +358,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: 8c6a07d -->
+<!-- last-documented-commit: 931ef06 -->

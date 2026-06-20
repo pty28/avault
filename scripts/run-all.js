@@ -21,11 +21,6 @@ const { spawn } = require('child_process');
 const forceFlag = process.argv.includes('--force');
 const fullFlag = process.argv.includes('--full');
 
-// DMM API ID チェック
-const API_ID = process.env.DMM_API_ID;
-const AFFILIATE_ID = process.env.DMM_AFFILIATES_ID;
-const hasApiCredentials = API_ID && AFFILIATE_ID;
-
 // サイト有効フラグ（デフォルト true、.env で false に上書き可能）
 const useDMM    = process.env.USE_DMM    !== 'false';
 const useMGS    = process.env.USE_MGSTAGE !== 'false';
@@ -119,13 +114,6 @@ async function runAll() {
   console.log('╔' + '═'.repeat(68) + '╗');
   console.log('║' + ' '.repeat(16) + '🔄 全ライブラリ 全スクリプト順次実行ツール' + ' '.repeat(10) + '║');
   console.log('╚' + '═'.repeat(68) + '╝');
-
-  // API ID チェック - メッセージ表示
-  if (!hasApiCredentials) {
-    console.log('\n⚠️  警告: DMM_API_ID / DMM_AFFILIATES_ID が設定されていません');
-    console.log('   → DMM の女優・メーカー情報取得（Fetch Info）をスキップします');
-    console.log('   → 女優情報は `npm run search-actress` で Web から取得してください\n');
-  }
 
   if (!useDMM)    console.log('⏭️  USE_DMM=false: DMM をスキップ');
   if (!useMGS)    console.log('⏭️  USE_MGSTAGE=false: MGStage をスキップ');

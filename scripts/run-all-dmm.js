@@ -3,49 +3,35 @@
 /**
  * run-all-dmm.js
  *
- * 以下の4つのスクリプトを順番に実行します：
- * 1. npm run scrape-dmm - DMM ライブラリからデータをスクレイピング
- * 2. npm run fetch-info - 女優名、メーカー、レーベル情報を取得
- * 3. npm run scrape-manufacturer-codes - メーカー品番を取得
- * 4. npm run search-actress - Web サイトから女優情報を取得
+ * 以下のスクリプトを順番に実行します：
+ * 1. npm run scrape-dmm - DMM マイライブラリ API から作品情報＋メタ（女優・メーカー・
+ *    レーベル・メーカー品番・プレイヤーURL）を取得
+ * 2. npm run search-actress - 女優未登録作品（素人系など）を Web から補完
+ *
+ * 2026-06 のDMMリニューアル後、scrape-dmm が GraphQL API でメタ情報まで取得するため、
+ * 旧来の fetch-info / scrape-manufacturer-codes / fetch-player-urls / fetch-actresses は
+ * 不要となり削除した。
  *
  * 使用方法: npm run run-all-dmm
- * または: npm run run-all-dmm -- --force (fetch-info と search-actress を --force フラグで実行)
+ * または: npm run run-all-dmm -- --force (各ステップを --force フラグで実行)
  */
 
 const { spawn } = require('child_process');
 
 const forceFlag = process.argv.includes('--force');
 
-// DMM API ID チェック
-const API_ID = process.env.DMM_API_ID;
-const AFFILIATE_ID = process.env.DMM_AFFILIATES_ID;
-const hasApiCredentials = API_ID && AFFILIATE_ID;
-
 const scripts = [
   {
     name: 'Scrape DMM Library',
     command: 'npm',
     args: forceFlag ? ['run', 'scrape-dmm', '--', '--force'] : ['run', 'scrape-dmm'],
-    description: `DMM マイライブラリから作品コード、タイトル、プレイヤーURLをスクレイピング中${forceFlag ? ' (--force モード)' : ''}...`,
-  },
-  ...(hasApiCredentials ? [{
-    name: 'Fetch Info',
-    command: 'npm',
-    args: forceFlag ? ['run', 'fetch-info', '--', '--force'] : ['run', 'fetch-info'],
-    description: `女優名、作品URL、メーカー/レーベル情報を取得中${forceFlag ? ' (--force モード)' : ''}...`,
-  }] : []),
-  {
-    name: 'Scrape Manufacturer Codes',
-    command: 'npm',
-    args: ['run', 'scrape-manufacturer-codes'],
-    description: 'FANZA ページからメーカー品番をスクレイピング中...',
+    description: `DMM マイライブラリ API から作品情報・女優・メーカー/レーベル・品番・プレイヤーURLを取得中${forceFlag ? ' (--force モード)' : ''}...`,
   },
   {
     name: 'Search Actress Web',
     command: 'npm',
     args: forceFlag ? ['run', 'search-actress', '--', '--force'] : ['run', 'search-actress'],
-    description: `Web サイトから女優情報を取得中${forceFlag ? ' (--force モード)' : ''}...`,
+    description: `女優未登録作品の情報を Web から補完中${forceFlag ? ' (--force モード)' : ''}...`,
   },
 ];
 
@@ -98,13 +84,6 @@ async function runAll() {
   console.log('╔' + '═'.repeat(68) + '╗');
   console.log('║' + ' '.repeat(20) + '🔄 DMM 全スクリプト順次実行ツール' + ' '.repeat(14) + '║');
   console.log('╚' + '═'.repeat(68) + '╝');
-
-  // API ID チェック - メッセージ表示
-  if (!hasApiCredentials) {
-    console.log('\n⚠️  警告: DMM_API_ID / DMM_AFFILIATES_ID が設定されていません');
-    console.log('   → Fetch Info（女優・メーカー情報取得）をスキップします');
-    console.log('   → 女優情報は `npm run search-actress` で Web から取得してください\n');
-  }
 
   console.log(`\n📋 実行予定: ${scripts.map(s => s.name).join(' → ')}`);
   console.log(`⏱️  開始時刻: ${new Date().toLocaleString('ja-JP')}`);

@@ -65,24 +65,16 @@ npm install
 
 ### ステップ2: 環境変数の設定
 
-DMM Affiliate API を使用するには、API ID が必要です。
-DMMの女優名の取得・メーカーIDの取得はこのAPIで行います。正しい女優名の取得にAPIの利用を推奨します（特に単体系はこちらを推奨します）
-
 ```bash
 # .env ファイルを作成
 cp .env.example .env
-
-# .env ファイルを編集して以下を設定：
-# DMM_API_ID=your_api_id_here
-# DMM_AFFILIATES_ID=xxxxx-990
 ```
 
-DMM Affiliate API の取得方法：
-1. [DMM Affiliate](https://affiliate.dmm.com/) にアクセス
-2. アカウントを作成・ログイン
-3. API認証情報を取得
+DMM の女優名・メーカー・レーベル・メーカー品番・プレイヤーURLは、`npm run scrape-dmm` が DMM の内部 API（GraphQL）から一括取得します。認証はすべてログインセッション（Puppeteer プロファイル＋クッキー）で行うため、**DMM Affiliate API ID（`DMM_API_ID` / `DMM_AFFILIATES_ID`）は不要** です。
 
-> **ヒント**: API ID がない場合、作品情報の取得（スクレイピング）は可能ですが、女優名・メーカー・レーベル情報の自動取得ができません。代わりに `npm run search-actress` で Web から女優情報を取得するか、`npm run update-performers` で手動入力できます。
+> **ヒント**: GraphQL から女優が取得できない作品（素人系など）は、`npm run search-actress` で Web から補完するか、`npm run update-performers` で手動入力できます。
+
+`.env` で実質的に設定が必要なのは、以下のスクレイピング対象サイトのトグルだけです。
 
 **スクレイピング対象サイトの設定（必須確認）:**
 
@@ -132,7 +124,7 @@ npm run scrape-caribbean
 npm run search-actress
 ```
 
-API ID なしでも、各サイトの作品情報（コード・タイトル・プレイヤーURL等）の取得は可能です。女優名などのメタデータは手動で入力するか、Web 検索で補完できます。
+DMM は `scrape-dmm` だけで作品情報・女優・メーカー・レーベル・品番・プレイヤーURLまで取得できます。女優が取得できなかった作品（素人系など）は `npm run search-actress` で Web から補完してください。
 
 > **D2Pass について**: Hey動画（VRACK）とカリビアンは同じ D2Pass サービスで認証されるため、VRACK でログインするとカリビアンにも自動アクセス可能です。
 
@@ -166,7 +158,7 @@ rm -rf .puppeteer-profiles/d2pass
 ### よくあるトラブル
 
 **Q: スクレイピング実行時にエラーが出た**
-- A: ネットワーク接続を確認し、DMM API 接続テストは `npm run fetch-info` で動作確認できます
+- A: ネットワーク接続を確認し、DMM の動作確認は `npm run scrape-dmm` で行えます（ログイン状態・API 取得をまとめてチェックできます）
 
 **Q: ビューワーが開かない / データが表示されない**
 - A: 以下を確認
@@ -178,7 +170,7 @@ rm -rf .puppeteer-profiles/d2pass
 - A: `data/actresses.db` ファイルが存在するか確認。存在しない場合は以下を実行：
   ```bash
   cp /path/to/actresses.db data/actresses.db
-  npm run serve
+  npm run serve-start
   ```
 
 **Q: タグが編集できない**
@@ -197,7 +189,7 @@ rm -rf .puppeteer-profiles/d2pass
 ```
 collection_list/
 ├── scripts/                           # Node.js スクリプト
-│   ├── scrape-dmm-library.js         # DMMライブラリのスクレイピング + プレイヤーURL取得
+│   ├── scrape-dmm-library.js         # DMMライブラリ取得 + 女優・メーカー・レーベル・品番・プレイヤーURLをGraphQL APIで一括取得
 │   ├── scrape-mgstage.js             # MGStage購入済みストリーミング動画のスクレイピング
 │   ├── scrape-vrack.js               # VRACK購入済み動画のスクレイピング
 │   ├── scrape-caribbean.js           # カリビアン購入済み動画のスクレイピング
@@ -358,8 +350,8 @@ npm run run-all -- --full --force        # 全ページ取得 + 上書き
 
 **DMM のみ:**
 ```bash
-npm run run-all-dmm                      # デフォルト（1ページ目のみ）
-npm run run-all-dmm -- --full --force    # 全ページ + 上書き
+npm run run-all-dmm                      # DMM 全処理（scrape-dmm → search-actress）
+npm run run-all-dmm -- --force           # 既存データも上書き（DMM は常に全件取得）
 ```
 
 **MGStage のみ:**
@@ -412,21 +404,14 @@ rm -rf .puppeteer-profiles/d2pass     # VRACK・カリビアン のセッショ�
 #### DMM
 
 ```bash
-npm run scrape-dmm                    # 最初のページのみ
-npm run scrape-dmm -- --full          # 全ページ取得
-npm run scrape-dmm -- --force         # プレイヤーURL強制再取得
-npm run fetch-info                    # 女優名・メーカー・レーベル取得（推奨）
-npm run scrape-manufacturer-codes     # メーカー品番取得
-npm run search-actress                # Web から女優情報取得
+npm run scrape-dmm                    # 全作品を取得（作品情報＋女優・メーカー・レーベル・品番・プレイヤーURLを一括取得）
+npm run scrape-dmm -- --force         # 既存分も含めてメタを再取得
+npm run search-actress                # 女優未登録作品を Web から補完
 ```
+
+`scrape-dmm` が DMM の内部 GraphQL API からメタ情報まで取得するため、女優・メーカー・品番取得用の個別コマンドは不要です。
 
 詳細は [docs/specs/scraping.md](docs/specs/scraping.md) を参照。
-
-**セットアップ（初回のみ）:**
-```bash
-cp .env.example .env
-# .env ファイルを編集して DMM_API_ID を設定
-```
 
 #### MGStage
 
@@ -496,7 +481,7 @@ node scripts/search-actress.js --file data/vrack-library.json    # VRACK対象
 
 ### 初回セットアップ
 
-1. `.env` ファイルを作成して DMM API ID を設定
+1. `cp .env.example .env` で `.env` を作成し、`USE_*` のサイトトグルを確認
 2. `npm install` で依存をインストール
 3. `npm run run-all` で全ソースをスクレイピング
 
@@ -526,7 +511,7 @@ npm run serve-start
 
 ### API レート制限
 
-- DMM API は 1リクエスト/秒 の制限がある
+- `scrape-dmm` は DMM の内部 GraphQL API を連続呼び出しするため、各作品のメタ取得を約250ms間隔（`metaDelay`）でスロットルしている
 - `--force` フラグは全データを再処理するため、必要な時のみ使用
 
 ### データ保護
@@ -554,3 +539,5 @@ npm run serve-start
 ## 📜 ライセンス
 
 MIT
+
+<!-- last-documented-commit: 931ef06 -->

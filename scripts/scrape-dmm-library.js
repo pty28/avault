@@ -3,20 +3,51 @@ const fs = require('fs').promises;
 const path = require('path');
 
 /**
- * DMMマイライブラリから作品情報を取得するスクリプト
+ * DMMマイライブラリ（新SPA: video.dmm.co.jp）から作品情報を取得するスクリプト
+ *
+ * 2026-06 のDMMリニューアルで購入済み一覧が React/Tailwind 製 SPA に移行し、
+ * 旧 DOM セレクタ（mySearchList_*）が消滅したため、内部 GraphQL API を直接叩く方式へ変更。
+ *
+ * 取得方法:
+ *   1. Mylibrary       : 購入済み一覧（id=品番, タイトル, サムネ, contentType, 取得日時）
+ *   2. ContentMeta     : 詳細メタ（メーカー品番, 女優, メーカー, レーベル, products→playerUrls）
  *
  * 使用方法:
- *   npm run scrape          - 最初のページのデータのみを取得
- *   npm run scrape -- --full - すべてのページをロードして取得
+ *   npm run scrape-dmm            - 新規分の取得＋メタ付与
+ *   npm run scrape-dmm -- --force - 既存分も含めてメタを再取得
  */
 
 const CONFIG = {
-  targetUrl: 'https://www.dmm.co.jp/digital/-/mylibrary/search/',
+  targetUrl: 'https://video.dmm.co.jp/mylibrary/',
+  graphqlUrl: 'https://api.video.dmm.co.jp/graphql',
   outputFile: path.join(__dirname, '../data/dmm-library.json'),
   cookieFile: path.join(__dirname, '../.puppeteer-profiles/dmm-cookies.json'),
-  waitTimeout: 60000, // ログイン待機時間（60秒）
-  clickDelay: 2000,   // 「もっと見る」ボタンクリック間隔（2秒）
+  profileDir: path.join(__dirname, '../.puppeteer-profiles/dmm'),
+  pageSize: 120,         // Mylibrary 1ページあたり件数（API側 limit）
+  metaDelay: 250,        // ContentMeta 連続呼び出し間隔（ミリ秒）
 };
+
+// 購入済み一覧（取得日時の新しい順）
+const MYLIBRARY_QUERY = `query Mylibrary($offset: Int!, $filter: PPVContentViewingRightsItemSummaryListFilterInput!, $sort: PPVContentViewingRightsItemSummaryListSort!) {
+  user { ... on Member { ppvLibrary {
+    list: contentViewingRightsSummaryList(filter: $filter, offset: $offset, limit: ${CONFIG.pageSize}, sort: $sort) {
+      items { id content { title packageImage { mediumUrl } contentType floor } contentItem { latestViewingRightsAcquiredAt } }
+      pageInfo { hasNext totalCount }
+    } } } }
+}`;
+
+// 詳細メタ（女優・メーカー・レーベル・品番・products）
+const CONTENT_META_QUERY = `query ContentMeta($id: ID!) {
+  ppvContent(id: $id) {
+    id title floor contentType
+    packageImage { mediumUrl largeUrl }
+    makerContentId
+    maker { id name }
+    label { id name }
+    actresses { name }
+    products { id utilizationStatus }
+  }
+}`;
 
 /**
  * 保存済みのクッキーを復元
@@ -52,113 +83,8 @@ async function saveCookies(page) {
 }
 
 /**
- * 「もっと見る」ボタンを繰り返しクリックしてすべてのデータをロード
- */
-async function loadAllItems(page) {
-  console.log('📥 すべてのアイテムを読み込んでいます...');
-
-  let clickCount = 0;
-  let consecutiveNoChangeCount = 0;
-  const maxNoChangeAttempts = 3;
-
-  while (true) {
-    try {
-      // 現在のアイテム数を取得
-      const currentItemCount = await page.evaluate(() => {
-        const items = document.querySelectorAll('.mySearchList_item');
-        return items.length;
-      });
-
-      console.log(`   現在のアイテム数: ${currentItemCount}`);
-
-      // 「もっと見る」ボタンをページ内で探してクリック
-      const clickResult = await page.evaluate(() => {
-        const moreButtonDiv = document.querySelector('.mySearchList_more');
-        if (!moreButtonDiv) {
-          return { found: false, reason: 'mySearchList_more div not found' };
-        }
-
-        const moreButtonLink = moreButtonDiv.querySelector('a');
-        if (!moreButtonLink) {
-          return { found: false, reason: 'anchor link not found' };
-        }
-
-        // ボタンが表示されているか確認
-        const rect = moreButtonLink.getBoundingClientRect();
-        const isVisible = rect.top >= 0 && rect.left >= 0 &&
-                         rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-                         rect.right <= (window.innerWidth || document.documentElement.clientWidth);
-
-        // スクロールしてボタンを表示領域に入れる
-        moreButtonLink.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        // 少し待ってからクリック
-        return new Promise((resolve) => {
-          setTimeout(() => {
-            try {
-              moreButtonLink.click();
-              resolve({ found: true, clicked: true });
-            } catch (err) {
-              resolve({ found: true, clicked: false, error: err.message });
-            }
-          }, 500);
-        });
-      });
-
-      if (!clickResult.found) {
-        console.log(`   ℹ 「もっと見る」ボタンが見つかりません: ${clickResult.reason}`);
-        console.log('   全データの読み込みが完了しました。');
-        break;
-      }
-
-      if (!clickResult.clicked) {
-        console.log(`   ⚠️  クリックに失敗しました: ${clickResult.error || 'unknown'}`);
-        break;
-      }
-
-      clickCount++;
-      console.log(`   ✓ 「もっと見る」ボタンをクリックしました (${clickCount}回目)`);
-
-      // 新しいアイテムがロードされるまで待機
-      await new Promise(r => setTimeout(r, CONFIG.clickDelay));
-
-      // 新しいアイテム数を取得
-      const newItemCount = await page.evaluate(() => {
-        const items = document.querySelectorAll('.mySearchList_item');
-        return items.length;
-      });
-
-      // アイテム数が増えているか確認
-      if (newItemCount === currentItemCount) {
-        consecutiveNoChangeCount++;
-        console.log(`   ⚠️  アイテム数が増加していません (${consecutiveNoChangeCount}/${maxNoChangeAttempts})`);
-
-        if (consecutiveNoChangeCount >= maxNoChangeAttempts) {
-          console.log('   ℹ 読み込み完了と判断します。');
-          break;
-        }
-
-        // 少し長めに待ってリトライ
-        await new Promise(r => setTimeout(r, CONFIG.clickDelay * 2));
-      } else {
-        console.log(`   ✓ ${newItemCount - currentItemCount}件の新しいアイテムが読み込まれました`);
-        consecutiveNoChangeCount = 0;
-      }
-
-    } catch (error) {
-      console.log('   ⚠️  エラーが発生しました:', error.message);
-      console.log('   スタックトレース:', error.stack);
-      break;
-    }
-  }
-
-  console.log(`✅ 読み込み完了 (合計クリック回数: ${clickCount}回)`);
-}
-
-/**
- * productCode を DMM CID 形式に正規化する
- * 例: 49FN00008 → 49FN08（数値サフィックスの先頭ゼロを除去、最低2桁）
- * h_ prefix や通常コードには影響しない
+ * productCode を DMM CID 形式に正規化する（既存データとの重複判定の安全網）
+ * 例: 49FN00008 → 49FN08
  */
 function normalizeDmmProductCode(code) {
   if (!code) return code;
@@ -172,7 +98,6 @@ function normalizeDmmProductCode(code) {
 
 /**
  * 正規化済みコード（例: 49FN08）からサムネイル形式（49FN00008）を生成
- * existingSet のルックアップ用安全網として使用
  */
 function paddedEquivalent(code) {
   const m = code.match(/^(\d+[A-Za-z]+)(\d{2,4})$/);
@@ -181,644 +106,316 @@ function paddedEquivalent(code) {
 }
 
 /**
- * thumbnail URLからproductCodeを抽出
+ * thumbnail URLからproductCodeを抽出（既存サムネ形式の重複判定用）
  */
 function extractProductCodeFromThumbnail(src) {
-  let productCode = '';
-
-  // パターン1: /CODE/CODE[ps|js].jpg
-  let urlMatch = src.match(/\/([^/]+)\/\1(ps|js)\.(jpg|png|gif)$/i);
-  if (urlMatch) {
-    productCode = urlMatch[1].toUpperCase();
-  }
-
-  // パターン2: /CODE/CODE-[サフィックス].jpg
-  if (!productCode) {
-    urlMatch = src.match(/\/([a-z0-9_-]+)\/\1[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)$/i);
-    if (urlMatch) {
-      productCode = urlMatch[1].toUpperCase();
-    }
-  }
-
-  // パターン3: 最後のパスセグメントから抽出
-  if (!productCode) {
-    urlMatch = src.match(/\/([a-z0-9_-]+)[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)$/i);
-    if (urlMatch) {
-      productCode = urlMatch[1].toUpperCase();
-    }
-  }
-
-  return productCode || null;
+  if (!src) return null;
+  let m = src.match(/\/([^/]+)\/\1(ps|js)\.(jpg|png|gif)/i);
+  if (m) return m[1].toUpperCase();
+  m = src.match(/\/([a-z0-9_-]+)\/\1[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)/i);
+  if (m) return m[1].toUpperCase();
+  m = src.match(/\/([a-z0-9_-]+)[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)/i);
+  if (m) return m[1].toUpperCase();
+  return null;
 }
 
 /**
- * モーダルから再生URLを配列で抽出
- * @param {string} expectedProductCode - 期待するproductCode（検証用）
+ * 女優名のクリーニング（Alice表記・括弧内の別名処理）
  */
-async function extractPlayerUrlFromDetailPage(page, expectedProductCode) {
-  const result = await page.evaluate(() => {
-    const links = document.querySelectorAll('a[onclick*="window.open"]');
-    if (links.length === 0) {
-      return { success: false, error: '再生リンクが見つかりません' };
-    }
-
-    const playerUrls = [];
-    for (const link of links) {
-      const onclickText = link.getAttribute('onclick');
-      const urlMatch = onclickText.match(/window\.open\('([^']+)'/);
-      if (urlMatch && urlMatch[1]) {
-        playerUrls.push(urlMatch[1]);
-      }
-    }
-
-    if (playerUrls.length === 0) {
-      return { success: false, error: 'URLの抽出に失敗' };
-    }
-
-    return { success: true, playerUrls };
-  });
-
-  // 抽出したURLのpidが期待するproductCodeと一致するか検証
-  if (result.success && expectedProductCode) {
-    const expectedPid = expectedProductCode.toLowerCase();
-    const firstUrl = result.playerUrls[0];
-    const pidMatch = firstUrl.match(/\/pid=([^/]+)\//);
-    if (pidMatch && !pidMatch[1].startsWith(expectedPid)) {
-      return { success: false, error: `pid不一致: 期待=${expectedPid}, 実際=${pidMatch[1]}（前の商品のモーダルが残っている可能性）` };
-    }
+function cleanActressName(name) {
+  if (!name) return name;
+  if (name.includes('Alice')) {
+    const match = name.match(/Alice（(.+)）?/);
+    if (match && match[1]) return match[1];
   }
-
-  return result;
+  if (name.includes('（')) return name.split('（')[0];
+  return name;
 }
 
 /**
- * 指定したproductCodeのモーダルが表示されるまで待機
- * pidを検証しながら待つことで、前のモーダルが残っていても正しく検知できる
+ * ブラウザのページコンテキストから GraphQL を呼ぶ（セッションcookie自動付与）
  */
-async function waitForModalWithPid(page, expectedProductCode, timeoutMs = 8000) {
-  const expectedPid = expectedProductCode.toLowerCase();
-  const startTime = Date.now();
-  while (Date.now() - startTime < timeoutMs) {
-    const result = await page.evaluate(() => {
-      const links = document.querySelectorAll('a[onclick*="window.open"]');
-      if (links.length === 0) return { hasLinks: false, pid: null };
-      const onclickText = links[0].getAttribute('onclick');
-      const m = onclickText && onclickText.match(/\/pid=([^/]+)\//);
-      return { hasLinks: true, pid: m ? m[1] : null };
+async function gqlInPage(page, operationName, query, variables) {
+  return page.evaluate(async (url, operationName, query, variables) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ operationName, query, variables }),
+    });
+    let json = null;
+    try { json = await res.json(); } catch {}
+    return { status: res.status, errors: json && json.errors, data: json && json.data };
+  }, CONFIG.graphqlUrl, operationName, query, variables);
+}
+
+/**
+ * 購入済み一覧をページングで全件取得
+ */
+async function fetchAllPurchases(page) {
+  console.log('📥 購入済み一覧を取得しています...');
+  const items = [];
+  let offset = 0;
+  let totalCount = null;
+
+  while (true) {
+    const res = await gqlInPage(page, 'Mylibrary', MYLIBRARY_QUERY, {
+      filter: { displayStatus: 'VISIBLE' },
+      offset,
+      sort: 'VIEWING_RIGHTS_ACQUIRED_AT_DESC',
     });
 
-    if (result.hasLinks && result.pid && result.pid.startsWith(expectedPid)) {
-      return true; // 正しい商品のモーダルが開いた（pid=smus044st のようなサフィックス付きも許容）
+    if (res.status !== 200 || res.errors) {
+      throw new Error(`Mylibrary API エラー: status=${res.status} errors=${JSON.stringify(res.errors)}`);
     }
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-  return false;
-}
+    const list = res.data && res.data.user && res.data.user.ppvLibrary && res.data.user.ppvLibrary.list;
+    if (!list) throw new Error('Mylibrary レスポンスに list がありません（未ログインの可能性）');
 
-/**
- * 同一ブラウザセッション内で表示中の商品一覧からプレイヤーURLを取得
- */
-async function fetchPlayerUrlsInSession(page, libraryData, forceMode, cidMap = new Map()) {
-  console.log('\n🎬 プレイヤーURL取得を開始...');
-
-  // 取得済み商品のセット（forceMode時はスキップしない）
-  // paddedEquivalent + 保存済みサムネイルURLからのコードも含める安全網
-  // （cidMapが不完全な場合でも正しくスキップできるようにする）
-  const existingSet = new Set(
-    forceMode ? [] : libraryData
-      .filter(item => item.playerUrls && item.playerUrls.length > 0)
-      .flatMap(item => {
-        const code = item.productCode;
-        const padded = paddedEquivalent(code);
-        const thumbFromStored = extractProductCodeFromThumbnail(item.thumbnail || '');
-        const codes = [code];
-        if (padded && padded !== code) codes.push(padded);
-        if (thumbFromStored && thumbFromStored !== code) codes.push(thumbFromStored);
-        return codes;
-      })
-  );
-
-  // 一覧ページの全商品を取得
-  const productImages = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll('.mySearchList_item_pict img')).map(img => ({
-      alt: img.alt || '',
-      src: img.src || '',
-    }));
-  });
-
-  console.log(`   処理対象: ${productImages.length}件\n`);
-
-  let successCount = 0;
-  let skipCount = 0;
-  let failCount = 0;
-
-  for (let i = 0; i < productImages.length; i++) {
-    const product = productImages[i];
-    const thumbCode = extractProductCodeFromThumbnail(product.src);
-    const progress = `[${i + 1}/${productImages.length}]`;
-
-    if (!thumbCode) {
-      console.log(`   ${progress} ⚠️  productCode抽出失敗`);
-      failCount++;
-      continue;
+    totalCount = list.pageInfo.totalCount;
+    for (const it of list.items) {
+      items.push({
+        id: it.id,
+        title: (it.content && it.content.title) || '',
+        thumbnail: (it.content && it.content.packageImage && it.content.packageImage.mediumUrl) || '',
+        contentType: (it.content && it.content.contentType) || '',
+        floor: (it.content && it.content.floor) || '',
+        acquiredAt: (it.contentItem && it.contentItem.latestViewingRightsAcquiredAt) || '',
+      });
     }
+    console.log(`   ${items.length}/${totalCount} 件`);
 
-    // API マップに正規 CID があればそちらを productCode として使用
-    const apiCid = cidMap.get(thumbCode.toLowerCase());
-    const productCode = apiCid ? apiCid.toUpperCase() : thumbCode;
-
-    // 【VR】タイトルはスキップ
-    if (product.alt.includes('【VR】')) {
-      console.log(`   ${progress} ⏭️  スキップ: ${productCode} (VR作品)`);
-      skipCount++;
-      continue;
-    }
-
-    // 取得済みはスキップ
-    if (existingSet.has(productCode)) {
-      console.log(`   ${progress} ⏭️  スキップ: ${productCode} (取得済み)`);
-      skipCount++;
-      continue;
-    }
-
-    try {
-      // 商品をクリック
-      const clicked = await page.evaluate((targetCode) => {
-        const images = document.querySelectorAll('.mySearchList_item_pict img');
-        for (const img of images) {
-          const src = img.src || '';
-          let code = '';
-          let m = src.match(/\/([^/]+)\/\1(ps|js)\.(jpg|png|gif)$/i);
-          if (m) code = m[1].toUpperCase();
-          if (!code) {
-            m = src.match(/\/([a-z0-9_-]+)\/\1[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)$/i);
-            if (m) code = m[1].toUpperCase();
-          }
-          if (!code) {
-            m = src.match(/\/([a-z0-9_-]+)[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)$/i);
-            if (m) code = m[1].toUpperCase();
-          }
-          if (code === targetCode) {
-            img.click();
-            return true;
-          }
-        }
-        return false;
-      }, thumbCode);
-
-      if (!clicked) {
-        console.log(`   ${progress} ⚠️  クリック失敗: ${productCode}`);
-        failCount++;
-        continue;
-      }
-
-      // 正しい商品のモーダルが表示されるまで待機（pid検証付き）
-      // モーダルの pid はサムネイル形式（パディングあり）なので thumbCode を使用
-      const modalOpened = await waitForModalWithPid(page, thumbCode);
-      if (!modalOpened) {
-        console.log(`   ${progress} ⚠️  モーダル未表示: ${productCode}`);
-        await page.keyboard.press('Escape');
-        await new Promise(resolve => setTimeout(resolve, 500));
-        failCount++;
-        continue;
-      }
-
-      // URLを抽出（pid検証付き）
-      const urlResult = await extractPlayerUrlFromDetailPage(page, thumbCode);
-
-      if (urlResult.success) {
-        const playerUrls = urlResult.playerUrls.map(url => 'https://www.dmm.co.jp' + url);
-
-        // libraryData を更新
-        const item = libraryData.find(d => d.productCode === productCode);
-        if (item) {
-          item.playerUrls = playerUrls;
-        }
-
-        console.log(`   ${progress} ✅ ${productCode} (${playerUrls.length}個)`);
-        playerUrls.forEach((url, idx) => {
-          console.log(`         [${idx + 1}] ${url}`);
-        });
-        successCount++;
-      } else {
-        console.log(`   ${progress} ⚠️  URL抽出失敗: ${productCode} - ${urlResult.error}`);
-        failCount++;
-      }
-
-      // モーダルを閉じる（次のwaitForModalWithPidが正しいモーダルを待つので短い待機でOK）
-      await page.keyboard.press('Escape');
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-    } catch (error) {
-      console.log(`   ${progress} ❌ エラー: ${productCode} - ${error.message}`);
-      failCount++;
-    }
+    if (!list.pageInfo.hasNext) break;
+    offset += CONFIG.pageSize;
   }
 
-  console.log(`\n   ✅ プレイヤーURL取得完了: 成功${successCount}件 / スキップ${skipCount}件 / 失敗${failCount}件`);
-}
-
-/**
- * ページから作品情報を抽出
- */
-async function extractLibraryData(page) {
-  console.log('🔍 作品情報を抽出しています...');
-
-  const items = await page.evaluate(() => {
-    const results = [];
-    const itemElements = document.querySelectorAll('.mySearchList_item');
-
-    console.log(`Found ${itemElements.length} items`);
-
-    itemElements.forEach((item, index) => {
-      try {
-        // 画像要素を取得
-        const imgElement = item.querySelector('.mySearchList_item_pict img');
-        if (!imgElement) return;
-
-        // サムネイル画像URLの抽出
-        const thumbnail = imgElement.src || '';
-
-        // 画像URLから作品コード（品番）を抽出
-        let productCode = '';
-
-        // パターン1: /CODE/CODE[ps|js].jpg
-        // - ps: 一般作品 (例: vero00129/vero00129ps.jpg)
-        // - js: 素人系作品 (例: merc287/merc287js.jpg)
-        let urlMatch = thumbnail.match(/\/([^/]+)\/\1(ps|js)\.(jpg|png|gif)$/i);
-        if (urlMatch) {
-          productCode = urlMatch[1].toUpperCase();
-        }
-
-        // パターン2: /CODE/CODE-[サフィックス].jpg (例: CODE/CODE-640.jpg)
-        if (!productCode) {
-          urlMatch = thumbnail.match(/\/([a-z0-9_-]+)\/\1[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)$/i);
-          if (urlMatch) {
-            productCode = urlMatch[1].toUpperCase();
-          }
-        }
-
-        // パターン3: 最後のパスセグメントから抽出 (例: /path/to/CODE-640.jpg)
-        if (!productCode) {
-          urlMatch = thumbnail.match(/\/([a-z0-9_-]+)[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)$/i);
-          if (urlMatch) {
-            productCode = urlMatch[1].toUpperCase();
-          }
-        }
-
-        // タイトルの抽出（画像のalt属性から取得）
-        let title = imgElement.alt || '';
-
-        // タイトル要素からも取得を試みる
-        if (!title) {
-          const titleElement = item.querySelector('.mySearchList_item_title');
-          if (titleElement) {
-            // HD マークなどを除いたテキストを取得
-            const deliveryMark = titleElement.querySelector('.mySearchList_item_delivery');
-            if (deliveryMark) {
-              deliveryMark.remove();
-            }
-            title = titleElement.textContent.trim();
-          }
-        }
-
-        // 出演者名の抽出（マイライブラリページには表示されていないため空配列）
-        const actresses = [];
-
-        // デバッグ情報: wrapper div の ID を取得
-        let debugId = '';
-        const wrapperDiv = item.querySelector('div[id]');
-        if (wrapperDiv && wrapperDiv.id) {
-          debugId = wrapperDiv.id;
-        }
-
-        // 最低限の情報がある場合のみ追加
-        if (productCode || title || thumbnail) {
-          const itemData = {
-            productCode,
-            title,
-            actresses,
-            thumbnail,
-            itemURL: '',
-            isFetched: false,
-            isShirouto: false,
-            registeredAt: new Date().toISOString(),
-          };
-
-          // 作品コードが取得できなかった場合、デバッグ情報を追加
-          if (!productCode && thumbnail) {
-            itemData._debug = {
-              thumbnailUrl: thumbnail,
-              wrapperId: debugId,
-              note: 'Product code could not be extracted from thumbnail URL',
-            };
-          }
-
-          results.push(itemData);
-        }
-      } catch (error) {
-        console.error(`Item ${index} extraction error:`, error);
-      }
-    });
-
-    return results;
-  });
-
-  console.log(`✅ ${items.length}件の作品情報を抽出しました`);
+  console.log(`✅ 一覧取得完了: ${items.length}件\n`);
   return items;
+}
+
+/**
+ * products から playerUrls を再構成する
+ * - parent_product_id: 所有している product（utilizationStatus !== NONE、例: EST_PURCHASED）の id
+ * - pid（配信用コンテンツID）を products から特定する（cid からの推測ではなく実データ由来）:
+ *     1. 素人系(floor=AMATEUR)は `〜st` の product が存在 → それを使う（例: show019 → show019st）
+ *     2. それ以外は dl サフィックスを持たない「素」の product → エイリアス品番にも対応
+ *        （例: cid=61mdb093 でも素product=61rmd00723 を pid に使える）
+ *     3. いずれも無ければ cid にフォールバック
+ *   （既存データ3791件で 100% このルールで導出可能なことを確認済み）
+ * - VR作品はプレイヤーURL形式が異なるためスキップ
+ */
+function buildPlayerUrls(cid, products, contentType, title) {
+  if (contentType === 'VR' || /【VR】/.test(title)) return [];
+  if (!Array.isArray(products) || products.length === 0) return [];
+  const owned = products.filter(p => p.utilizationStatus && p.utilizationStatus !== 'NONE');
+  if (owned.length === 0) return [];
+
+  const stProduct = products.find(p => p.id && /st$/i.test(p.id));
+  const bareProduct = products.find(p => p.id && !/dl\d*$/i.test(p.id) && !/st$/i.test(p.id));
+  const pid = (stProduct ? stProduct.id : (bareProduct ? bareProduct.id : cid)).toLowerCase();
+
+  return owned.map(p =>
+    `https://www.dmm.co.jp/digital/-/player/=/player=html5/act=playlist/pid=${pid}/view_flag=1/parent_product_id=${p.id}/part=1/`
+  );
+}
+
+/**
+ * ContentMeta を取得して item にメタ情報を付与
+ */
+async function enrichItem(page, item) {
+  const cid = item.productCode.toLowerCase();
+  const res = await gqlInPage(page, 'ContentMeta', CONTENT_META_QUERY, { id: cid });
+  if (res.status !== 200 || res.errors || !res.data || !res.data.ppvContent) {
+    return { ok: false, error: res.errors ? JSON.stringify(res.errors) : `status=${res.status}` };
+  }
+  const c = res.data.ppvContent;
+
+  item.manufacturerCode = c.makerContentId || item.manufacturerCode || '';
+  item.makerName = (c.maker && c.maker.name) || item.makerName || '';
+  item.makerId = (c.maker && c.maker.id) || item.makerId || '';
+  item.labelName = (c.label && c.label.name) || item.labelName || '';
+  item.labelId = (c.label && c.label.id) || item.labelId || '';
+
+  const actresses = Array.isArray(c.actresses)
+    ? c.actresses.map(a => cleanActressName(a.name)).filter(Boolean)
+    : [];
+  if (actresses.length > 0) item.actresses = actresses;
+
+  const playerUrls = buildPlayerUrls(c.id, c.products, c.contentType, item.title);
+  if (playerUrls.length > 0) item.playerUrls = playerUrls;
+
+  item.isFetched = true;
+  return { ok: true, c, actresses, playerUrls };
 }
 
 /**
  * メイン処理
  */
 async function main() {
-  console.log('🚀 DMM Library Scraper を起動します\n');
+  console.log('🚀 DMM Library Scraper (API方式) を起動します\n');
 
-  // --full / --force フラグをチェック
-  const fullMode = process.argv.includes('--full');
   const forceMode = process.argv.includes('--force');
-  if (fullMode) {
-    console.log('📋 モード: FULL - すべてのページをロードして取得します');
-  } else {
-    console.log('📋 モード: FIRST PAGE - 最初のページのデータのみを取得します');
-    console.log('   (すべてのページを取得するには: npm run scrape-dmm -- --full)\n');
-  }
+  if (forceMode) console.log('🚩 --force: 既存分も含めてメタを再取得します\n');
 
   let browser;
-
   try {
-    // Puppeteerブラウザを起動
     console.log('🌐 ブラウザを起動しています...');
-
-    // システムのChromeを使用するパスを設定
     const chromePaths = [
       '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
       '/Applications/Chromium.app/Contents/MacOS/Chromium',
       '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
     ];
-
-    let executablePath = chromePaths.find(path => {
-      try {
-        require('fs').accessSync(path);
-        return true;
-      } catch {
-        return false;
-      }
+    const executablePath = chromePaths.find(p => {
+      try { require('fs').accessSync(p); return true; } catch { return false; }
     });
-
-    if (!executablePath) {
-      console.log('⚠️  システムにChromeが見つかりませんでした。Puppeteer付属のChromiumを使用します。');
-    } else {
-      console.log(`✓ Chrome を検出: ${executablePath}`);
-    }
+    if (executablePath) console.log(`✓ Chrome を検出: ${executablePath}`);
 
     browser = await puppeteer.launch({
-      headless: false, // ログインできるように表示モード
-      executablePath: executablePath, // システムのChromeを使用
-      userDataDir: path.join(__dirname, '../.puppeteer-profiles/dmm'), // セッション保持用プロファイル
+      headless: false,
+      executablePath,
+      userDataDir: CONFIG.profileDir,
       defaultViewport: { width: 1280, height: 800 },
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled', // Puppeteer 検出対策
-      ],
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
     });
 
     const page = await browser.newPage();
-
-    // Puppeteer 検出対策：navigator.webdriver を上書き
     await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-      });
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
     });
 
-    // getMemberPurchaseData API レスポンスから pid → cid マップを構築
-    const cidMap = new Map();
-    page.on('response', async (res) => {
-      if (!res.url().includes('getMemberPurchaseData')) return;
-      try {
-        const data = await res.json();
-        if (!Array.isArray(data.purchase_history)) return;
-        for (const entry of data.purchase_history) {
-          const pidKey = entry.pid.replace(/dl\d*$/i, '').toLowerCase();
-          cidMap.set(pidKey, entry.cid.toLowerCase());
-        }
-      } catch {}
-    });
-
-    // DMMマイライブラリページにアクセス
     console.log(`📄 ${CONFIG.targetUrl} にアクセスしています...\n`);
     await page.goto(CONFIG.targetUrl, { waitUntil: 'networkidle2' });
 
-    // 保存済みクッキーの復元を試みる
     const cookieRestored = await loadCookies(page);
-
-    // クッキー復元後、ページをリロード
     if (cookieRestored) {
       console.log('🔄 ページをリロードしています...\n');
       await page.reload({ waitUntil: 'networkidle2' });
     }
 
-    // ログイン状態をチェック（マイライブラリページが表示されているか）
-    const isLoggedIn = await page.evaluate(() => {
-      return document.querySelector('.mySearchList_item') !== null ||
-             document.querySelector('[class*="mylibrary"]') !== null;
+    // ログイン判定: Mylibrary API を1回叩いて data が返るか確認
+    let loginCheck = await gqlInPage(page, 'Mylibrary', MYLIBRARY_QUERY, {
+      filter: { displayStatus: 'VISIBLE' }, offset: 0, sort: 'VIEWING_RIGHTS_ACQUIRED_AT_DESC',
     });
+    let isLoggedIn = loginCheck.status === 200 && loginCheck.data &&
+                     loginCheck.data.user && loginCheck.data.user.ppvLibrary;
 
     if (!isLoggedIn) {
-      // ログインが必要な場合、ユーザーに手動でログインしてもらう
       console.log('⏳ ログインしてください...');
-      console.log('   ブラウザでDMMにログインしてマイライブラリページを表示してください。');
+      console.log('   ブラウザでDMM/FANZAにログインしてマイライブラリを表示してください。');
       console.log('   完了後、このターミナルで Enterキーを押してください。\n');
-
-      // ユーザーの入力待ち（Enterキー）
       await new Promise(resolve => {
-        process.stdin.once('data', () => {
-          process.stdin.pause();
-          resolve();
-        });
+        process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
       });
-
-      // ログイン後、クッキーを保存
       await saveCookies(page);
     } else {
-      console.log('✅ クッキーからのセッション復元成功！ログインをスキップします。\n');
+      console.log('✅ セッション復元成功！ログインをスキップします。\n');
     }
 
-    // --full モードの場合のみすべてのアイテムをロード
-    if (fullMode) {
-      await loadAllItems(page);
-    } else {
-      console.log('📥 最初のページのデータを取得します（フルモードではありません）\n');
-    }
-
-    // ページ全体をスクロールして遅延読み込みを完了
-    await page.evaluate(async () => {
-      await new Promise((resolve) => {
-        let totalHeight = 0;
-        const distance = 100;
-        const timer = setInterval(() => {
-          const scrollHeight = document.body.scrollHeight;
-          window.scrollBy(0, distance);
-          totalHeight += distance;
-
-          if (totalHeight >= scrollHeight) {
-            clearInterval(timer);
-            resolve();
-          }
-        }, 100);
-      });
-    });
-
-    // cidMap が空（IndexedDB キャッシュあり → API 未呼び出し）の場合 IndexedDB から補完
-    if (cidMap.size === 0) {
-      const idbData = await page.evaluate(async () => {
-        try {
-          const dbs = await indexedDB.databases();
-          const purchaseDb = dbs.find(db => db.name && db.name.startsWith('dig_purchase_history_v1_'));
-          if (!purchaseDb) return [];
-          return new Promise((resolve) => {
-            const req = indexedDB.open(purchaseDb.name);
-            req.onsuccess = (event) => {
-              const db = event.target.result;
-              const tx = db.transaction('purchase_history', 'readonly');
-              const store = tx.objectStore('purchase_history');
-              const getAllReq = store.getAll();
-              getAllReq.onsuccess = () => resolve(getAllReq.result);
-              getAllReq.onerror = () => resolve([]);
-            };
-            req.onerror = () => resolve([]);
-          });
-        } catch {
-          return [];
-        }
-      });
-
-      for (const entry of idbData) {
-        const pid = entry.product_id || entry.pid;
-        const cid = entry.content_id || entry.cid;
-        if (pid && cid) {
-          const pidKey = pid.replace(/dl\d*$/i, '').toLowerCase();
-          cidMap.set(pidKey, cid.toLowerCase());
-        }
-      }
-
-      if (cidMap.size > 0) {
-        console.log(`   📦 IndexedDB から CIDマップを構築: ${cidMap.size}件\n`);
-      }
-    }
-
-    // 作品情報を抽出
-    const scrapedData = await extractLibraryData(page);
+    // 購入済み一覧を全件取得
+    const purchases = await fetchAllPurchases(page);
 
     // 既存データを読み込み
-    console.log(`\n📂 既存データを確認しています...`);
+    console.log('📂 既存データを確認しています...');
     let existingData = [];
     try {
-      const existingJson = await fs.readFile(CONFIG.outputFile, 'utf-8');
-      existingData = JSON.parse(existingJson);
+      existingData = JSON.parse(await fs.readFile(CONFIG.outputFile, 'utf-8'));
       console.log(`   ✓ ${existingData.length}件の既存データを読み込みました`);
     } catch (error) {
-      if (error.code === 'ENOENT') {
-        console.log(`   ℹ️  既存ファイルが見つかりません。新規作成します。`);
-      } else {
-        console.log(`   ⚠️  既存ファイルの読み込みに失敗: ${error.message}`);
-      }
+      if (error.code === 'ENOENT') console.log('   ℹ️  既存ファイルが見つかりません。新規作成します。');
+      else throw error;
     }
 
-    // cidMap に基づいて scrapedData の productCode を正規化（サムネイル形式 → 正規 CID）
-    // existingData は変更しない（先祖還り・重複防止のため）
-    if (cidMap.size > 0) {
-      console.log(`   🗺  CIDマップ: ${cidMap.size}件`);
-
-      // 同一 apiCid が複数 item に割り当たる場合はバンドル購入CIDのため正規化をスキップ
-      const apiCidCount = new Map();
-      for (const item of scrapedData) {
-        if (!item.productCode) continue;
-        const apiCid = cidMap.get(item.productCode.toLowerCase());
-        if (apiCid) apiCidCount.set(apiCid, (apiCidCount.get(apiCid) || 0) + 1);
-      }
-
-      for (const item of scrapedData) {
-        if (!item.productCode) continue;
-        const apiCid = cidMap.get(item.productCode.toLowerCase());
-        if (apiCid && apiCid.toUpperCase() !== item.productCode) {
-          if (apiCidCount.get(apiCid) > 1) {
-            console.log(`   ⚠️  CIDマップ: ${item.productCode} → ${apiCid.toUpperCase()} をスキップ（バンドルCID: ${apiCidCount.get(apiCid)}件が同一CID）`);
-            continue;
-          }
-          item.productCode = apiCid.toUpperCase();
-        }
-      }
-    }
-
-    // 既存のproductCodeをSetに格納（パディング形式・サムネイル形式・cidMap正規形も含める）
+    // 既存 productCode の集合（正規化・パディング・サムネ形も含めた安全網）
     const existingCodes = new Set(
       existingData
         .filter(item => item.productCode)
         .flatMap(item => {
-          const code = item.productCode.toLowerCase();
-          const codes = [code];
-          // cidMap の正規形（scrapedData が正規化済みでも重複検出できるよう）
-          const canonical = cidMap.get(code);
-          if (canonical && canonical !== code) codes.push(canonical);
-          // paddedEquivalent（正規形 → パディング形式）
+          const codes = [item.productCode.toLowerCase()];
+          const norm = normalizeDmmProductCode(item.productCode);
+          if (norm) codes.push(norm.toLowerCase());
           const padded = paddedEquivalent(item.productCode);
           if (padded) codes.push(padded.toLowerCase());
-          // サムネイル URL から抽出したコード
-          const thumbCode = extractProductCodeFromThumbnail(item.thumbnail || '');
-          if (thumbCode) codes.push(thumbCode.toLowerCase());
+          const thumb = extractProductCodeFromThumbnail(item.thumbnail || '');
+          if (thumb) codes.push(thumb.toLowerCase());
           return codes;
         })
     );
 
-    // 新規データのみをフィルタ
-    const newItems = scrapedData.filter(item => {
-      if (!item.productCode) {
-        // productCodeがない場合は常に追加（重複チェック不可能）
-        return true;
-      }
-      return !existingCodes.has(item.productCode.toLowerCase());
-    });
+    const isExisting = (id) => {
+      const variants = [id.toLowerCase()];
+      const norm = normalizeDmmProductCode(id);
+      if (norm) variants.push(norm.toLowerCase());
+      const padded = paddedEquivalent(id);
+      if (padded) variants.push(padded.toLowerCase());
+      return variants.some(v => existingCodes.has(v));
+    };
 
-    console.log(`   📊 スクレイピング結果: ${scrapedData.length}件`);
-    console.log(`   ➕ 新規作品: ${newItems.length}件`);
-    console.log(`   ⏭️  既存作品（スキップ）: ${scrapedData.length - newItems.length}件`);
+    // 新規アイテムを生成（スキーマは既存に合わせる）
+    const newItems = purchases
+      .filter(p => !isExisting(p.id))
+      .map(p => ({
+        productCode: p.id.toUpperCase(),
+        title: p.title,
+        actresses: [],
+        thumbnail: p.thumbnail,
+        itemURL: `https://video.dmm.co.jp/av/content/?id=${p.id.toLowerCase()}`,
+        isFetched: false,
+        isShirouto: false,
+        registeredAt: p.acquiredAt || new Date().toISOString(),
+        playerUrls: [],
+        makerName: '',
+        makerId: '',
+        labelName: '',
+        labelId: '',
+        manufacturerCode: '',
+      }));
 
-    // 既存データと新規データを統合
+    console.log(`   📊 一覧: ${purchases.length}件 / ➕ 新規: ${newItems.length}件 / ⏭️ 既存: ${purchases.length - newItems.length}件\n`);
+
     const mergedData = [...existingData, ...newItems];
 
-    // JSONファイルに保存
-    console.log(`\n💾 ${CONFIG.outputFile} に保存しています...`);
-    await fs.writeFile(
-      CONFIG.outputFile,
-      JSON.stringify(mergedData, null, 2),
-      'utf-8'
+    // 一旦保存（メタ付与前）
+    await fs.writeFile(CONFIG.outputFile, JSON.stringify(mergedData, null, 2), 'utf-8');
+
+    // メタ情報を付与（新規＋未取得、--forceで全件）
+    const newSet = new Set(newItems);
+    const targets = mergedData.filter(item =>
+      item.productCode && (forceMode || newSet.has(item) || !item.isFetched)
     );
+    console.log(`🎬 メタ情報を取得します（対象: ${targets.length}件）...`);
 
-    console.log(`✅ 完了！`);
-    console.log(`   総作品数: ${mergedData.length}件（既存 ${existingData.length}件 + 新規 ${newItems.length}件）`);
-    console.log(`   ファイル: ${CONFIG.outputFile}\n`);
+    let okCount = 0, failCount = 0;
+    for (let i = 0; i < targets.length; i++) {
+      const item = targets[i];
+      const progress = `[${i + 1}/${targets.length}]`;
+      try {
+        const r = await enrichItem(page, item);
+        if (r.ok) {
+          okCount++;
+          console.log(`   ${progress} ✅ ${item.productCode}  品番:${item.manufacturerCode || '-'}  女優:${(item.actresses || []).join(',') || '-'}  player:${(item.playerUrls || []).length}`);
+        } else {
+          failCount++;
+          console.log(`   ${progress} ⚠️  ${item.productCode}  メタ取得失敗: ${r.error}`);
+        }
+      } catch (error) {
+        failCount++;
+        console.log(`   ${progress} ❌ ${item.productCode}  ${error.message}`);
+      }
+      await new Promise(r => setTimeout(r, CONFIG.metaDelay));
+    }
 
-    // プレイヤーURL取得処理（同一ブラウザセッションで実行）
-    await fetchPlayerUrlsInSession(page, mergedData, forceMode, cidMap);
+    // 最終保存
+    await fs.writeFile(CONFIG.outputFile, JSON.stringify(mergedData, null, 2), 'utf-8');
+    console.log(`\n💾 保存完了: ${CONFIG.outputFile}`);
+    console.log(`   総作品数: ${mergedData.length}件（既存 ${existingData.length} + 新規 ${newItems.length}）`);
+    console.log(`   メタ取得: 成功 ${okCount} / 失敗 ${failCount}`);
 
-    // playerUrls を含めて再保存
-    await fs.writeFile(
-      CONFIG.outputFile,
-      JSON.stringify(mergedData, null, 2),
-      'utf-8'
-    );
-    console.log(`💾 playerUrls を含めて再保存しました\n`);
-
-    // 統計情報を表示
-    const withCode = mergedData.filter(item => item.productCode).length;
-    const withPerformers = mergedData.filter(item => item.actresses.length > 0).length;
-
-    console.log('📊 統計:');
-    console.log(`   作品コードあり: ${withCode}件`);
-    console.log(`   出演者情報あり: ${withPerformers}件`);
+    const withCode = mergedData.filter(item => item.manufacturerCode).length;
+    const withPerformers = mergedData.filter(item => item.actresses && item.actresses.length > 0).length;
+    const withPlayer = mergedData.filter(item => item.playerUrls && item.playerUrls.length > 0).length;
+    console.log('\n📊 統計:');
+    console.log(`   メーカー品番あり: ${withCode}件`);
+    console.log(`   女優情報あり: ${withPerformers}件`);
+    console.log(`   プレイヤーURLあり: ${withPlayer}件`);
 
   } catch (error) {
     console.error('❌ エラーが発生しました:', error);
@@ -831,5 +428,4 @@ async function main() {
   }
 }
 
-// スクリプト実行
-main().catch(console.error);
+main().catch(err => { console.error(err); process.exit(1); });
