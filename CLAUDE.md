@@ -221,6 +221,8 @@ npm run search-actress -- --force
 npm run search-actress -- --jewel
 npm run search-actress -- --file data/mgstage-library.json  # または mgstage-library.json（CWDから）
 npm run search-actress-mgstage      # MGStage向け女優検索
+npm run search-actress -- SONE-258            # 商品ID（productCode）指定で単体検索（makerNameチェックなし）
+npm run search-actress-mgstage -- SIRO-5588   # MGStage 商品ID指定で単体検索
 node scripts/search-actress.js --file data/vrack-library.json      # VRACK（Hey動画・一本道）向け女優検索
 npm run search-products-by-actress -- "女優名"
 npm run search-products-by-actress -- "女優名1,女優名2" --all
@@ -231,4 +233,4 @@ npm run update-performers-1pondo -- 1pondo_123456 "女優名"         # 一本�
 npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリビアン
 ```
 
-<!-- last-documented-commit: 931ef06 -->
+<!-- last-documented-commit: 4c85442 -->

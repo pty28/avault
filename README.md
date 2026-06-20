@@ -115,13 +115,10 @@ npm run run-all -- --full
 **個別実行（オプション）**
 ```bash
 # 個別にスクレイピング実行
-npm run scrape-dmm
-npm run scrape-mgstage
+npm run run-all-dmm
+npm run run-all-mgs
 npm run scrape-vrack
 npm run scrape-caribbean
-
-# 女優情報を Web から取得（optional）
-npm run search-actress
 ```
 
 DMM は `scrape-dmm` だけで作品情報・女優・メーカー・レーベル・品番・プレイヤーURLまで取得できます。女優が取得できなかった作品（素人系など）は `npm run search-actress` で Web から補完してください。
@@ -465,13 +462,15 @@ npm run update-performers-mgstage -- SIRO05588 "女優名"
 npm run update-performers-vrack -- heydouga_123456 "女優名"
 ```
 
-**Web から女優情報を取得:**
+**Web から女優情報を取得（商品IDで女優を検索）:**
 ```bash
-npm run search-actress                # DMM対象
-npm run search-actress -- --force     # 既存データも再取得
-npm run search-actress-mgstage        # MGStage対象
-node scripts/search-actress.js --file data/vrack-library.json    # VRACK対象
+npm run search-actress                       # DMM ライブラリの女優未取得分を Web 検索で補完
+npm run search-actress -- SONE-258           # DMM の商品ID（productCode）を指定して単体検索
+npm run search-actress-mgstage               # MGStage ライブラリの女優未取得分を補完
+npm run search-actress-mgstage -- SIRO-5588  # MGStage の商品IDを指定して単体検索
 ```
+
+> 商品ID（productCode）を引数で渡すと、その作品だけを Web 検索します（メーカー名チェックはスキップ）。引数なしの場合はライブラリ全体の女優未取得アイテムを処理します。
 
 詳細：[scraping.md](docs/specs/scraping.md)
 
@@ -540,4 +539,4 @@ npm run serve-start
 
 MIT
 
-<!-- last-documented-commit: 931ef06 -->
+<!-- last-documented-commit: 4c85442 -->

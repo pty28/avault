@@ -253,11 +253,12 @@ VRACK（Hey動画・一本道・HEYZO）の購入済み動画をスクレイピ�
 
 | フラグ | 動作 |
 |--------|------|
+| `<productCode>` | 商品ID（位置引数）を指定するとそのアイテムのみ単体検索する（makerName チェックなし）。例: `npm run search-actress -- SONE-258` / MGS は `--file` 付きコマンドと併用（`npm run search-actress-mgstage -- SIRO-5588`） |
 | `--force` | `isSearched` フラグを無視して再処理 |
 | `--jewel` | 特定メーカー（Jewel: 46165, 豊彦: 45339, メガハーツ: 46654）のみ処理 |
 | `--file <path>` | 対象ライブラリファイルを指定（デフォルト: `data/dmm-library.json`） |
 
-`--file` 指定時はメーカー名不一致チェック（suspicious.log）をスキップ。
+`--file` 指定時はメーカー名不一致チェック（suspicious.log）をスキップ。位置引数の判定では `--file` の値は productCode と見なされない。
 
 ### 除外タイトルパターン
 
@@ -358,4 +359,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: 931ef06 -->
+<!-- last-documented-commit: 4c85442 -->
