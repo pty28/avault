@@ -82,7 +82,8 @@ collection_list/
 │   ├── utils/
 │   │   ├── generate-viewer.js      # viewer-data.js 等を自動生成
 │   │   ├── search-products-by-actress.js
-│   │   └── update-performers.js
+│   │   ├── update-performers.js
+│   │   └── refetch-dmm-by-code.js  # 旧スキーマ品番のメタを ContentMeta から再取得
 │   │
 │   └── debug/                      # 調査用スクリプト（実装完了後は削除する）
 │
@@ -231,6 +232,7 @@ npm run update-performers-mgstage -- SIRO05588 "女優名"            # MGStage
 npm run update-performers-vrack -- heydouga_123456 "女優名"        # VRACK
 npm run update-performers-1pondo -- 1pondo_123456 "女優名"         # 一本道
 npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリビアン
+npm run refetch-dmm -- 53RDV043 53KS8488           # DMM 旧スキーマ品番のメタを ContentMeta から再取得
 ```
 
-<!-- last-documented-commit: 4c85442 -->
+<!-- last-documented-commit: b6ac252 -->

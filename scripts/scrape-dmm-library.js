@@ -221,8 +221,8 @@ function buildPlayerUrls(cid, products, contentType, title) {
 /**
  * ContentMeta を取得して item にメタ情報を付与
  */
-async function enrichItem(page, item) {
-  const cid = item.productCode.toLowerCase();
+async function enrichItem(page, item, cidOverride) {
+  const cid = (cidOverride || item.productCode).toLowerCase();
   const res = await gqlInPage(page, 'ContentMeta', CONTENT_META_QUERY, { id: cid });
   if (res.status !== 200 || res.errors || !res.data || !res.data.ppvContent) {
     return { ok: false, error: res.errors ? JSON.stringify(res.errors) : `status=${res.status}` };
@@ -248,6 +248,65 @@ async function enrichItem(page, item) {
 }
 
 /**
+ * ブラウザ起動・クッキー復元・ログイン判定を行い、ログイン済みの page を返す
+ */
+async function setupSession() {
+  console.log('🌐 ブラウザを起動しています...');
+  const chromePaths = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+  ];
+  const executablePath = chromePaths.find(p => {
+    try { require('fs').accessSync(p); return true; } catch { return false; }
+  });
+  if (executablePath) console.log(`✓ Chrome を検出: ${executablePath}`);
+
+  const browser = await puppeteer.launch({
+    headless: false,
+    executablePath,
+    userDataDir: CONFIG.profileDir,
+    defaultViewport: { width: 1280, height: 800 },
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+  });
+
+  const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  });
+
+  console.log(`📄 ${CONFIG.targetUrl} にアクセスしています...\n`);
+  await page.goto(CONFIG.targetUrl, { waitUntil: 'networkidle2' });
+
+  const cookieRestored = await loadCookies(page);
+  if (cookieRestored) {
+    console.log('🔄 ページをリロードしています...\n');
+    await page.reload({ waitUntil: 'networkidle2' });
+  }
+
+  // ログイン判定: Mylibrary API を1回叩いて data が返るか確認
+  let loginCheck = await gqlInPage(page, 'Mylibrary', MYLIBRARY_QUERY, {
+    filter: { displayStatus: 'VISIBLE' }, offset: 0, sort: 'VIEWING_RIGHTS_ACQUIRED_AT_DESC',
+  });
+  let isLoggedIn = loginCheck.status === 200 && loginCheck.data &&
+                   loginCheck.data.user && loginCheck.data.user.ppvLibrary;
+
+  if (!isLoggedIn) {
+    console.log('⏳ ログインしてください...');
+    console.log('   ブラウザでDMM/FANZAにログインしてマイライブラリを表示してください。');
+    console.log('   完了後、このターミナルで Enterキーを押してください。\n');
+    await new Promise(resolve => {
+      process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
+    });
+    await saveCookies(page);
+  } else {
+    console.log('✅ セッション復元成功！ログインをスキップします。\n');
+  }
+
+  return { browser, page };
+}
+
+/**
  * メイン処理
  */
 async function main() {
@@ -258,57 +317,9 @@ async function main() {
 
   let browser;
   try {
-    console.log('🌐 ブラウザを起動しています...');
-    const chromePaths = [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-      '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
-    ];
-    const executablePath = chromePaths.find(p => {
-      try { require('fs').accessSync(p); return true; } catch { return false; }
-    });
-    if (executablePath) console.log(`✓ Chrome を検出: ${executablePath}`);
-
-    browser = await puppeteer.launch({
-      headless: false,
-      executablePath,
-      userDataDir: CONFIG.profileDir,
-      defaultViewport: { width: 1280, height: 800 },
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
-    });
-
-    const page = await browser.newPage();
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => false });
-    });
-
-    console.log(`📄 ${CONFIG.targetUrl} にアクセスしています...\n`);
-    await page.goto(CONFIG.targetUrl, { waitUntil: 'networkidle2' });
-
-    const cookieRestored = await loadCookies(page);
-    if (cookieRestored) {
-      console.log('🔄 ページをリロードしています...\n');
-      await page.reload({ waitUntil: 'networkidle2' });
-    }
-
-    // ログイン判定: Mylibrary API を1回叩いて data が返るか確認
-    let loginCheck = await gqlInPage(page, 'Mylibrary', MYLIBRARY_QUERY, {
-      filter: { displayStatus: 'VISIBLE' }, offset: 0, sort: 'VIEWING_RIGHTS_ACQUIRED_AT_DESC',
-    });
-    let isLoggedIn = loginCheck.status === 200 && loginCheck.data &&
-                     loginCheck.data.user && loginCheck.data.user.ppvLibrary;
-
-    if (!isLoggedIn) {
-      console.log('⏳ ログインしてください...');
-      console.log('   ブラウザでDMM/FANZAにログインしてマイライブラリを表示してください。');
-      console.log('   完了後、このターミナルで Enterキーを押してください。\n');
-      await new Promise(resolve => {
-        process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
-      });
-      await saveCookies(page);
-    } else {
-      console.log('✅ セッション復元成功！ログインをスキップします。\n');
-    }
+    const session = await setupSession();
+    browser = session.browser;
+    const page = session.page;
 
     // 購入済み一覧を全件取得
     const purchases = await fetchAllPurchases(page);
@@ -428,4 +439,8 @@ async function main() {
   }
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+if (require.main === module) {
+  main().catch(err => { console.error(err); process.exit(1); });
+}
+
+module.exports = { setupSession, enrichItem, buildPlayerUrls, extractProductCodeFromThumbnail, CONFIG };

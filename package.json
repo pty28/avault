@@ -11,6 +11,7 @@
     "run-all": "node scripts/run-all.js",
     "run-all-dmm": "node scripts/run-all-dmm.js",
     "search-products-by-actress": "node scripts/utils/search-products-by-actress.js",
+    "refetch-dmm": "node scripts/utils/refetch-dmm-by-code.js",
     "update-performers": "node scripts/utils/update-performers.js",
     "update-performers-mgstage": "node scripts/utils/update-performers.js --file data/mgstage-library.json",
     "update-performers-vrack": "node scripts/utils/update-performers.js --file data/vrack-library.json",

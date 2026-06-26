@@ -196,7 +196,8 @@ collection_list/
 │   ├── utils/                        # ユーティリティスクリプト
 │   │   ├── generate-viewer.js        # viewer-data.js, presets-data.js等を生成
 │   │   ├── search-products-by-actress.js
-│   │   └── update-performers.js      # 女優情報を手動更新
+│   │   ├── update-performers.js      # 女優情報を手動更新
+│   │   └── refetch-dmm-by-code.js    # 旧スキーマ品番のメタを再取得
 │   │
 │   └── debug/                        # デバッグ・テストスクリプト
 │
@@ -462,6 +463,12 @@ npm run update-performers-mgstage -- SIRO05588 "女優名"
 npm run update-performers-vrack -- heydouga_123456 "女優名"
 ```
 
+**DMM 旧スキーマ品番のメタを再取得:**
+```bash
+npm run refetch-dmm -- 53RDV043 53KS8488   # 指定した品番だけ ContentMeta から再取得
+```
+> `isFetched` 済みでメタが空・不正な旧エントリの復旧用。`productCode` は変更せず、`playerUrls`・メーカー・レーベル・女優・品番を上書きします（手動入力済みの女優名は保護）。
+
 **Web から女優情報を取得（商品IDで女優を検索）:**
 ```bash
 npm run search-actress                       # DMM ライブラリの女優未取得分を Web 検索で補完
@@ -539,4 +546,4 @@ npm run serve-start
 
 MIT
 
-<!-- last-documented-commit: 4c85442 -->
+<!-- last-documented-commit: b6ac252 -->

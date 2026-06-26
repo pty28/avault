@@ -297,6 +297,17 @@ npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリ�
 
 特定アイテムの女優情報を手動で更新。コンマ区切りで複数指定可能。対象ライブラリは `--file` 付きの派生コマンドで切り替える。
 
+### refetch-dmm-by-code
+
+```bash
+npm run refetch-dmm -- 53RDV043 53KS8488 15ALD64   # スペース区切り
+npm run refetch-dmm -- 53RDV043,53KS8488           # カンマ区切りも可
+npm run refetch-dmm -- --file data/dmm-library.json SIRO05588  # 対象ファイル指定
+npm run refetch-dmm -- --cid 53ks08352 53RDV043    # id を手動指定（対象1件のとき）
+```
+
+指定した `productCode` のエントリだけ DMM の `ContentMeta` API からメタ（`playerUrls` / `maker` / `label` / `actresses` / `manufacturerCode` / `itemURL`）を取り直して上書きする復旧用ツール。`isFetched` 済みで `scrape-dmm` の再取得対象から外れている旧スキーマ由来のエントリ（メタが空・不正）を救済する。`productCode` 自体は変更しない。`ContentMeta` の `id` はマイライブラリ一覧の id（= `productCode` 小文字。サムネのゼロ埋め cid ではない）で解決し、解決できない場合は `--cid` で手動指定する。既存の手動キュレーション済み女優名（非空の `actresses`）は enrich 後に復元して保護する。
+
 ---
 
 ## Caribbean Scraper (`scrape-caribbean.js`)
@@ -359,4 +370,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: 4c85442 -->
+<!-- last-documented-commit: b6ac252 -->
