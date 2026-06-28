@@ -235,4 +235,4 @@ npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリ�
 npm run refetch-dmm -- 53RDV043 53KS8488           # DMM 旧スキーマ品番のメタを ContentMeta から再取得
 ```
 
-<!-- last-documented-commit: b6ac252 -->
+<!-- last-documented-commit: 2f40902 -->

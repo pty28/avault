@@ -370,4 +370,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: b6ac252 -->
+<!-- last-documented-commit: 2f40902 -->

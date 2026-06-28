@@ -243,4 +243,4 @@ curl "http://localhost:8000/list"
 - `/search` は別名の完全一致検索のみ（部分一致・あいまい検索は非対応）
 - ビューワーの Deep Search 機能を有効にすると、自動的にこれらの API を呼び出し、別名を本名に変換・展開します
 
-<!-- last-documented-commit: de18498 -->
+<!-- last-documented-commit: 2f40902 -->

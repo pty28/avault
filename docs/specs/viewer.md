@@ -228,4 +228,4 @@ SQLite ファイル（`data/actresses.db`）を使用して女優データを管
 - presets/tags が動作しない場合: ブラウザコンソールを確認 → `npm run generate-viewer` で再生成 → `http://localhost:8000` でアクセスしているか確認
 - タグ編集ができない場合: `npm run serve-start` で起動しているか確認（`file://` では編集不可）
 
-<!-- last-documented-commit: de18498 -->
+<!-- last-documented-commit: 2f40902 -->
