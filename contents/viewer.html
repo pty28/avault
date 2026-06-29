@@ -66,6 +66,13 @@
                     <h1 class="text-3xl font-bold">AVault Viewer</h1>
                     <div class="flex gap-2">
                         <button
+                            id="actressSearchBtn"
+                            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
+                            title="女優名から別名を検索して検索ボックスに取り込む"
+                        >
+                            女優名検索
+                        </button>
+                        <button
                             id="selectModeBtn"
                             class="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
                         >
@@ -306,6 +313,28 @@
         </div>
     </div>
 
+    <!-- Actress Alias Search Modal -->
+    <div id="actressSearchModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-lg border border-gray-600 p-6 w-96 max-h-[80vh] overflow-y-auto">
+            <h3 class="text-lg font-bold mb-4">女優名検索</h3>
+            <div class="mb-3">
+                <label class="block text-sm text-gray-400 mb-1">女優名</label>
+                <input type="text" id="actressSearchName" placeholder="女優名を入力..." autocomplete="off"
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:border-blue-500">
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm text-gray-400 mb-1">別名（編集可・カンマ区切り）</label>
+                <textarea id="actressSearchAliases" rows="4" placeholder="女優名を入力すると別名が表示されます"
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-y"></textarea>
+                <p id="actressSearchStatus" class="text-xs text-gray-500 mt-1"></p>
+            </div>
+            <div class="flex gap-2 justify-end">
+                <button id="actressSearchCancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">キャンセル</button>
+                <button id="actressSearchApply" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm">入力</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Floating Action Bar -->
     <div id="floatingBar" class="hidden fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-600 p-4 z-40">
         <div class="max-w-7xl mx-auto flex items-center justify-center gap-4">
@@ -426,6 +455,13 @@
         const modalClose = document.getElementById('modalClose');
         const deepSearchCheckbox = document.getElementById('deepSearch');
         const selectModeBtn = document.getElementById('selectModeBtn');
+        const actressSearchBtn = document.getElementById('actressSearchBtn');
+        const actressSearchModal = document.getElementById('actressSearchModal');
+        const actressSearchName = document.getElementById('actressSearchName');
+        const actressSearchAliases = document.getElementById('actressSearchAliases');
+        const actressSearchStatus = document.getElementById('actressSearchStatus');
+        const actressSearchCancel = document.getElementById('actressSearchCancel');
+        const actressSearchApply = document.getElementById('actressSearchApply');
         const floatingBar = document.getElementById('floatingBar');
         const selectedCountEl = document.getElementById('selectedCount');
         const assignTagsBtn = document.getElementById('assignTagsBtn');
@@ -1009,6 +1045,94 @@
             }
             return Array.from(expandedTerms);
         }
+
+        // ============ Actress Alias Search ============
+
+        var actressSearchTimer = null;
+        var actressSearchReqId = 0;
+
+        function openActressSearch() {
+            actressSearchName.value = '';
+            actressSearchAliases.value = '';
+            actressSearchStatus.textContent = '';
+            actressSearchModal.classList.remove('hidden');
+            actressSearchName.focus();
+        }
+
+        function closeActressSearch() {
+            actressSearchModal.classList.add('hidden');
+            if (actressSearchTimer) { clearTimeout(actressSearchTimer); actressSearchTimer = null; }
+        }
+
+        async function lookupActressAliases(name) {
+            var reqId = ++actressSearchReqId;
+            actressSearchStatus.textContent = '検索中...';
+            var names = [];
+            try {
+                // 入力がメイン名か別名か不明なため、まず別名検索でメイン名を解決
+                var mainName = name;
+                var searchRes = await fetch('/search?alias=' + encodeURIComponent(name));
+                if (searchRes.ok) {
+                    var searchData = await searchRes.json();
+                    if (searchData.results && searchData.results.length > 0) {
+                        mainName = searchData.results[0].main_name;
+                    }
+                }
+                var detailsRes = await fetch('/details?name=' + encodeURIComponent(mainName));
+                if (detailsRes.ok) {
+                    var detailsData = await detailsRes.json();
+                    if (detailsData.main_name) names.push(detailsData.main_name);
+                    if (Array.isArray(detailsData.aliases)) {
+                        detailsData.aliases.forEach(function(a) {
+                            if (names.indexOf(a) === -1) names.push(a);
+                        });
+                    }
+                }
+            } catch (e) {
+                if (reqId === actressSearchReqId) {
+                    actressSearchStatus.textContent = 'サーバーに接続できません（npm run serve で実行してください）';
+                }
+                return;
+            }
+            if (reqId !== actressSearchReqId) return; // 古いリクエストの結果は破棄
+            if (names.length === 0) {
+                actressSearchAliases.value = '';
+                actressSearchStatus.textContent = '該当する女優が見つかりませんでした';
+            } else {
+                actressSearchAliases.value = names.join(', ');
+                actressSearchStatus.textContent = names.length + ' 件の名前（メイン名＋別名）';
+            }
+        }
+
+        actressSearchBtn.addEventListener('click', openActressSearch);
+        actressSearchCancel.addEventListener('click', closeActressSearch);
+        actressSearchModal.addEventListener('click', function(e) {
+            if (e.target === actressSearchModal) closeActressSearch();
+        });
+        actressSearchName.addEventListener('input', function(e) {
+            var v = e.target.value.trim();
+            if (actressSearchTimer) clearTimeout(actressSearchTimer);
+            if (!v) {
+                actressSearchReqId++; // 進行中のリクエスト結果を無効化
+                actressSearchAliases.value = '';
+                actressSearchStatus.textContent = '';
+                return;
+            }
+            actressSearchTimer = setTimeout(function() { lookupActressAliases(v); }, 350);
+        });
+        actressSearchApply.addEventListener('click', function() {
+            var terms = actressSearchAliases.value
+                .split(/[,\n]+/)
+                .map(function(t) { return t.trim(); })
+                .filter(function(t) { return t.length > 0; });
+            if (terms.length === 0) { closeActressSearch(); return; }
+            cachedSearchTerms = terms.map(function(t) { return t.toLowerCase(); });
+            searchInput.value = terms.join(' ');
+            clearSearchBtn.style.display = 'block';
+            applyFilters();
+            closeActressSearch();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
 
         // ============ Filtering ============
 
