@@ -184,7 +184,7 @@ rm -rf .puppeteer-profiles/d2pass
 ## 📋 ディレクトリ構成
 
 ```
-collection_list/
+avault/
 ├── scripts/                           # Node.js スクリプト
 │   ├── scrape-dmm-library.js         # DMMライブラリ取得 + 女優・メーカー・レーベル・品番・プレイヤーURLをGraphQL APIで一括取得
 │   ├── scrape-mgstage.js             # MGStage購入済みストリーミング動画のスクレイピング

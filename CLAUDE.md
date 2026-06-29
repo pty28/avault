@@ -66,7 +66,7 @@ AV作品情報（女優名・メーカー・品番等）をDMM/FANZA・MGStage�
 ## Project Structure
 
 ```
-collection_list/
+avault/
 ├── scripts/
 │   ├── scrape-dmm-library.js       # DMM ライブラリ取得（GraphQL APIで女優・メーカー・レーベル・品番・playerURLも一括取得）
 │   ├── scrape-mgstage.js           # MGStage 購入済みストリーミング動画のスクレイピング
