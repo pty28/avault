@@ -143,22 +143,31 @@ npm run viewer           # 生成 + viewer.html を直接開く
 
 ```
 POST /api/tag-definitions
-Body: [{ "name": "タグ名", "color": "#hex" }]
+Body: { "definitions": [{ "name": "タグ名", "color": "#hex" }], "renames": { "旧名": "新名" } }
+Response: { "success": true, "tags": { "productCode": ["タグ名"] } }
 
 POST /api/tags/bulk
 Body: { "productCodes": [], "addTags": [], "removeTags": [] }
 ```
 
+`/api/tag-definitions` は旧形式（定義の配列を直接 Body に渡す）も受け付ける（その場合 `renames` は空扱い）。
+
 ### 選択モード
 
-1. 「選択モード」ボタンをON
+1. 「選択モード」ボタンをON（フローティングバーは選択モード中は常時表示される）
 2. カード/行をクリックして複数選択
-3. 画面下部のフローティングバーから「タグを割り当て」
+3. 「全選択」ボタンで**現在のページ**の全アイテムを選択（全選択済みの場合はラベルが「全解除」に変わり、解除動作になる）
+4. 画面下部のフローティングバーから「タグを割り当て」
 
 ### タグ管理モーダル
 
 - タグの追加・名前編集・色変更・削除が可能
 - 「保存」で `tag-definitions.json` に永続化（サーバーモード必須）
+- **改名・削除はタグ割り当てにも伝播する**：
+  - 改名したタグは `tags.json` 内の該当タグ名も新しい名前に書き換えられる
+  - 削除したタグは `tags.json` の全割り当てから除去される（割り当てが空になった productCode はエントリごと削除）
+  - 保存後、サーバーが返した最新の `tags` をビューワーが即座に反映する
+  - 絞り込み中のタグが改名された場合はフィルタも新しい名前に追従し、削除された場合はフィルタから外れて一覧が再描画される
 
 ---
 
@@ -214,7 +223,7 @@ Body: { "productCodes": [], "addTags": [], "removeTags": [] }
 ### API エンドポイント
 
 **タグ管理 API**
-- `POST /api/tag-definitions`: `tag-definitions.json` と `tag-definitions-data.js` を更新
+- `POST /api/tag-definitions`: `tag-definitions.json` と `tag-definitions-data.js` を更新。あわせて `renames` を `tags.json` / `tags-data.js` に伝播し、定義に存在しないタグ名を割り当てから掃除したうえで、同期後の `tags` をレスポンスで返す
 - `POST /api/tags/bulk`: `tags.json` と `tags-data.js` を更新
 
 **お気に入り API**
@@ -232,6 +241,11 @@ Body: { "productCodes": [], "addTags": [], "removeTags": [] }
 
 詳細は [actress-api.md](actress-api.md) を参照。
 
+**V-RACK プレイヤー中継**
+- `GET /heydouga/play/<productCode>`: `data/heydouga-cookies.json` の `NetiA` トークンを使って V-RACK プレイヤーページを組み立てて返す
+- トークンが見つからない場合、`expires` を過ぎて失効している場合、`heydouga-cookies.json` 自体が無い場合は 503 とともに**再取得手順を案内する HTML ページ**を返す（`npm run scrape-vrack` の実行を促す）
+- V-RACK 側のエラーはクロスオリジンのため親ページから検知できない。そのため失効判定は iframe を出す前にサーバー側で行う
+
 ### データベース
 
 SQLite ファイル（`data/actresses.db`）を使用して女優データを管理。
@@ -244,4 +258,4 @@ SQLite ファイル（`data/actresses.db`）を使用して女優データを管
 - presets/tags が動作しない場合: ブラウザコンソールを確認 → `npm run generate-viewer` で再生成 → `http://localhost:8000` でアクセスしているか確認
 - タグ編集ができない場合: `npm run serve-start` で起動しているか確認（`file://` では編集不可）
 
-<!-- last-documented-commit: 17e54e5 -->
+<!-- last-documented-commit: 8640a4a -->
