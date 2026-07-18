@@ -339,6 +339,7 @@
     <div id="floatingBar" class="hidden fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-600 p-4 z-40">
         <div class="max-w-7xl mx-auto flex items-center justify-center gap-4">
             <span id="selectedCount" class="text-sm text-gray-300">0 件選択中</span>
+            <button id="selectAllBtn" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">全選択</button>
             <button id="assignTagsBtn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium">タグを割り当て</button>
             <button id="deselectAllBtn" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">選択解除</button>
         </div>
@@ -464,6 +465,7 @@
         const actressSearchApply = document.getElementById('actressSearchApply');
         const floatingBar = document.getElementById('floatingBar');
         const selectedCountEl = document.getElementById('selectedCount');
+        const selectAllBtn = document.getElementById('selectAllBtn');
         const assignTagsBtn = document.getElementById('assignTagsBtn');
         const deselectAllBtn = document.getElementById('deselectAllBtn');
         const tagAssignModal = document.getElementById('tagAssignModal');
@@ -572,14 +574,18 @@
 
         // ============ API Helpers ============
 
-        async function apiSaveTagDefinitions(definitions) {
+        async function apiSaveTagDefinitions(definitions, renames) {
             try {
                 var res = await fetch('/api/tag-definitions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(definitions)
+                    body: JSON.stringify({ definitions: definitions, renames: renames || {} })
                 });
-                return await res.json();
+                var result = await res.json();
+                if (result.success && result.tags) {
+                    tagAssignments = result.tags;
+                }
+                return result;
             } catch (e) {
                 alert('タグの保存に失敗しました。サーバーモード (npm run serve) で実行してください。');
                 return { success: false };
@@ -624,13 +630,34 @@
             renderCurrentPage();
         }
 
+        function getCurrentPageCodes() {
+            var itemsPerPage = viewMode === 'card' ? CARD_PER_PAGE : TABLE_PER_PAGE;
+            var startIndex = (currentPage - 1) * itemsPerPage;
+            return filteredData.slice(startIndex, startIndex + itemsPerPage).map(function(it) { return it.productCode; });
+        }
+
         function updateFloatingBar() {
-            if (selectedItems.size > 0) {
-                floatingBar.classList.remove('hidden');
-                selectedCountEl.textContent = selectedItems.size + ' 件選択中';
-            } else {
+            if (!selectMode) {
                 floatingBar.classList.add('hidden');
+                return;
             }
+            floatingBar.classList.remove('hidden');
+            selectedCountEl.textContent = selectedItems.size + ' 件選択中';
+
+            var codes = getCurrentPageCodes();
+            var allSelected = codes.length > 0 && codes.every(function(c) { return selectedItems.has(c); });
+            selectAllBtn.textContent = allSelected ? '全解除' : '全選択';
+        }
+
+        function toggleSelectAllOnPage() {
+            var codes = getCurrentPageCodes();
+            var allSelected = codes.length > 0 && codes.every(function(c) { return selectedItems.has(c); });
+            codes.forEach(function(c) {
+                if (allSelected) selectedItems.delete(c);
+                else selectedItems.add(c);
+            });
+            updateFloatingBar();
+            renderCurrentPage();
         }
 
         function deselectAll() {
@@ -727,7 +754,7 @@
         var editingTagDefs = [];
 
         function openTagManageModal() {
-            editingTagDefs = tagDefinitions.map(function(d) { return { name: d.name, color: d.color }; });
+            editingTagDefs = tagDefinitions.map(function(d) { return { name: d.name, color: d.color, originalName: d.name }; });
             renderTagManageList();
             tagManageModal.classList.remove('hidden');
         }
@@ -806,12 +833,43 @@
             }
 
             var cleaned = editingTagDefs.map(function(d) { return { name: d.name.trim(), color: d.color }; });
-            var result = await apiSaveTagDefinitions(cleaned);
+
+            var renames = {};
+            editingTagDefs.forEach(function(d) {
+                var newName = d.name.trim();
+                if (d.originalName && d.originalName !== newName) renames[d.originalName] = newName;
+            });
+
+            var result = await apiSaveTagDefinitions(cleaned, renames);
             if (result.success) {
                 tagDefinitions = cleaned;
+
+                // アクティブなタグフィルタを新しい定義に追従させる（改名を反映し、削除されたタグは除去）
+                var validNames = new Set(cleaned.map(function(d) { return d.name; }));
+                var newFilters = new Set();
+                var filtersChanged = false;
+                activeTagFilters.forEach(function(f) {
+                    if (f === '__none__') { newFilters.add(f); return; }
+                    var mapped = Object.prototype.hasOwnProperty.call(renames, f) ? renames[f] : f;
+                    if (validNames.has(mapped)) {
+                        newFilters.add(mapped);
+                        if (mapped !== f) filtersChanged = true;
+                    } else {
+                        filtersChanged = true; // 削除されたタグ
+                    }
+                });
+                activeTagFilters = newFilters;
+
                 populateTagFilterButtons();
                 closeTagManageModal();
-                renderCurrentPage();
+
+                // フィルタ中のタグが改名・削除された場合は再フィルタして一覧を動的に更新
+                if (filtersChanged) {
+                    updateTagFilterUI();
+                    applyFilters();
+                } else {
+                    renderCurrentPage();
+                }
             }
         }
 
@@ -962,6 +1020,7 @@
 
             // Selection mode
             selectModeBtn.addEventListener('click', toggleSelectMode);
+            selectAllBtn.addEventListener('click', toggleSelectAllOnPage);
             deselectAllBtn.addEventListener('click', deselectAll);
             assignTagsBtn.addEventListener('click', openTagAssignModal);
 
@@ -1262,6 +1321,7 @@
             }
 
             updatePagination();
+            updateFloatingBar();
         }
 
         // ============ Render Cards ============

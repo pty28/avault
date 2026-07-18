@@ -81,6 +81,53 @@ function safeJsonForScript(value) {
         .replace(/\u2029/g, '\\u2029');
 }
 
+/**
+ * VRACK セッション失効時にプレイヤーの代わりに表示する手順ページ。
+ * V-RACK 側のクロスオリジンエラーは親から読めないため、失効はサーバー側で
+ * 検知し、iframe を出す前にこの手順ページへ差し替える。
+ */
+function renderVrackHelpPage(reason) {
+    return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>V-RACK セッションの更新が必要です</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center;
+           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .card { background: #1a1a1a; border: 2px solid #02d7f2; border-radius: 8px; padding: 40px; text-align: center;
+            color: #fff; max-width: 560px; box-shadow: 0 0 20px rgba(2, 215, 242, 0.3); }
+    h2 { color: #02d7f2; margin-bottom: 16px; font-size: 22px; }
+    p { margin: 12px 0; font-size: 15px; line-height: 1.7; }
+    .reason { color: #ffb3b3; font-size: 13px; }
+    .instruction { background: rgba(2, 215, 242, 0.1); padding: 20px; border-radius: 4px; margin-top: 20px;
+                   border-left: 3px solid #02d7f2; text-align: left; }
+    .step { display: flex; align-items: center; margin: 12px 0; }
+    .step-number { flex: 0 0 auto; width: 28px; height: 28px; background: #02d7f2; color: #000; border-radius: 50%;
+                   text-align: center; line-height: 28px; margin-right: 12px; font-weight: bold; }
+    code { background: #000; color: #02d7f2; padding: 2px 8px; border-radius: 4px; font-size: 14px; }
+    button { margin-top: 24px; padding: 12px 30px; background: #02d7f2; color: #000; border: none; border-radius: 4px;
+             font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.3s; }
+    button:hover { background: #00b0d0; transform: scale(1.05); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>⚠️ V-RACK セッションの更新が必要です</h2>
+    <p>視聴用の認証トークンが失効しているため、動画を再生できません。</p>
+    <p class="reason">${reason}</p>
+    <div class="instruction">
+      <div class="step"><span class="step-number">1</span><span>ターミナルで <code>npm run scrape-vrack</code> を実行</span></div>
+      <div class="step"><span class="step-number">2</span><span>開いたブラウザで（必要なら）ログインする</span></div>
+      <div class="step"><span class="step-number">3</span><span>完了したら下のボタンでこのページを再読み込み</span></div>
+    </div>
+    <button onclick="location.reload()">再読み込み</button>
+  </div>
+</body>
+</html>`;
+}
+
 const server = http.createServer(async (req, res) => {
     // CORS ヘッダー（localhost のみ許可）
     const origin = req.headers.origin;
@@ -115,9 +162,9 @@ const server = http.createServer(async (req, res) => {
         db.all(
             `SELECT DISTINCT a.id, a.main_name, a.page_url
              FROM actresses a
-             JOIN aliases al ON a.id = al.actress_id
-             WHERE al.alias_name = ?`,
-            [alias],
+             LEFT JOIN aliases al ON a.id = al.actress_id
+             WHERE al.alias_name = ? OR a.main_name = ?`,
+            [alias, alias],
             (err, rows) => {
                 if (err) {
                     jsonResponse(res, 500, { error: 'Internal Server Error', message: err.message });
@@ -210,14 +257,42 @@ const server = http.createServer(async (req, res) => {
         }
         try {
             const body = await parseBody(req);
+            // 旧形式（配列）と新形式（{definitions, renames}）の両対応
+            const definitions = Array.isArray(body) ? body : body.definitions;
+            const renames = (!Array.isArray(body) && body.renames) ? body.renames : {};
+            if (!Array.isArray(definitions)) throw new Error('invalid payload');
+
             const filePath = path.join(contentsDir, 'tag-definitions.json');
-            fs.writeFileSync(filePath, JSON.stringify(body, null, 2), 'utf-8');
+            fs.writeFileSync(filePath, JSON.stringify(definitions, null, 2), 'utf-8');
 
             // tag-definitions-data.js も同時更新してリロード後も定義が消えないようにする
             const tagDefsDataPath = path.join(contentsDir, 'tag-definitions-data.js');
-            fs.writeFileSync(tagDefsDataPath, `const TAG_DEFINITIONS = ${safeJsonForScript(body)};`, 'utf-8');
+            fs.writeFileSync(tagDefsDataPath, `const TAG_DEFINITIONS = ${safeJsonForScript(definitions)};`, 'utf-8');
 
-            jsonResponse(res, 200, { success: true });
+            // tags.json も同期: 改名を伝播し、定義に存在しない名前（削除済み）を掃除する
+            const tagsFilePath = path.join(contentsDir, 'tags.json');
+            let tags = {};
+            try {
+                tags = JSON.parse(fs.readFileSync(tagsFilePath, 'utf-8'));
+            } catch { /* ファイルなければ空 */ }
+
+            const validNames = new Set(definitions.map(d => d.name));
+            const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+            for (const code of Object.keys(tags)) {
+                if (FORBIDDEN_KEYS.has(code)) { delete tags[code]; continue; }
+                const next = [];
+                for (const t of tags[code]) {
+                    const mapped = Object.prototype.hasOwnProperty.call(renames, t) ? renames[t] : t;
+                    if (validNames.has(mapped) && !next.includes(mapped)) next.push(mapped);
+                }
+                if (next.length) tags[code] = next; else delete tags[code];
+            }
+
+            fs.writeFileSync(tagsFilePath, JSON.stringify(tags, null, 2), 'utf-8');
+            const tagsDataPath = path.join(contentsDir, 'tags-data.js');
+            fs.writeFileSync(tagsDataPath, `const TAGS = ${safeJsonForScript(tags)};`, 'utf-8');
+
+            jsonResponse(res, 200, { success: true, tags });
         } catch (e) {
             jsonResponse(res, 400, { success: false, error: e.message });
         }
@@ -391,10 +466,18 @@ const server = http.createServer(async (req, res) => {
         const cookiesPath = path.join(__dirname, '../data/heydouga-cookies.json');
         try {
             const cookies = JSON.parse(fs.readFileSync(cookiesPath, 'utf-8'));
-            const netiA = (cookies.find(c => c.name === 'NetiA') || {}).value;
+            const netiACookie = cookies.find(c => c.name === 'NetiA');
+            const netiA = netiACookie && netiACookie.value;
             if (!netiA) {
-                res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
-                res.end('NetiA cookie not found. Run: npm run scrape-heydouga');
+                res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(renderVrackHelpPage('NetiA トークンが見つかりません。'));
+                return;
+            }
+            // 失効を事前検知（expires は秒単位の epoch。セッションクッキーは -1 で期限なし）
+            if (netiACookie.expires && netiACookie.expires > 0 && netiACookie.expires * 1000 < Date.now()) {
+                const expiredAt = new Date(netiACookie.expires * 1000).toLocaleString('ja-JP');
+                res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(renderVrackHelpPage(`セッションは ${expiredAt} に失効しました。`));
                 return;
             }
             // heydouga.com が V-RACK iframe に渡す形式を再現:
@@ -598,8 +681,8 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
             res.end(html);
         } catch (e) {
-            res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
-            res.end('heydouga-cookies.json not found. Run: npm run scrape-heydouga');
+            res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(renderVrackHelpPage('認証情報ファイル (heydouga-cookies.json) が見つかりません。'));
         }
         return;
     }
