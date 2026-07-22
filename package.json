@@ -28,7 +28,8 @@
     "scrape-mgstage": "node scripts/scrape-mgstage.js",
     "scrape-mgstage-full": "node scripts/scrape-mgstage.js --full",
     "scrape-caribbean": "node scripts/scrape-caribbean.js",
-    "run-all-mgs": "node scripts/run-all-mgs.js"
+    "run-all-mgs": "node scripts/run-all-mgs.js",
+    "update-actress-db": "bash scripts/update-actress-db.sh"
   },
   "keywords": [
     "dmm",
