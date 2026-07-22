@@ -1115,8 +1115,17 @@
 
         function setActressWikiLink(url) {
             if (url) {
-                actressSearchWikiLink.href = url;
-                actressSearchWikiLink.classList.remove('hidden');
+                try {
+                    var parsed = new URL(url);
+                    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+                        actressSearchWikiLink.classList.add('hidden');
+                        return;
+                    }
+                    actressSearchWikiLink.href = parsed.toString();
+                    actressSearchWikiLink.classList.remove('hidden');
+                } catch (e) {
+                    actressSearchWikiLink.classList.add('hidden');
+                }
             } else {
                 actressSearchWikiLink.classList.add('hidden');
             }
