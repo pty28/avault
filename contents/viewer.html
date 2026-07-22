@@ -327,6 +327,8 @@
                 <textarea id="actressSearchAliases" rows="4" placeholder="女優名を入力すると別名が表示されます"
                     class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm text-gray-100 placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-y"></textarea>
                 <p id="actressSearchStatus" class="text-xs text-gray-500 mt-1"></p>
+                <a id="actressSearchWikiLink" href="#" target="_blank" rel="noopener noreferrer"
+                    class="hidden text-xs text-blue-400 hover:text-blue-300 underline mt-1 inline-block">素人総合Wikiで開く ↗</a>
             </div>
             <div class="flex gap-2 justify-end">
                 <button id="actressSearchCancel" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg text-sm">キャンセル</button>
@@ -463,6 +465,7 @@
         const actressSearchStatus = document.getElementById('actressSearchStatus');
         const actressSearchCancel = document.getElementById('actressSearchCancel');
         const actressSearchApply = document.getElementById('actressSearchApply');
+        const actressSearchWikiLink = document.getElementById('actressSearchWikiLink');
         const floatingBar = document.getElementById('floatingBar');
         const selectedCountEl = document.getElementById('selectedCount');
         const selectAllBtn = document.getElementById('selectAllBtn');
@@ -1110,10 +1113,20 @@
         var actressSearchTimer = null;
         var actressSearchReqId = 0;
 
+        function setActressWikiLink(url) {
+            if (url) {
+                actressSearchWikiLink.href = url;
+                actressSearchWikiLink.classList.remove('hidden');
+            } else {
+                actressSearchWikiLink.classList.add('hidden');
+            }
+        }
+
         function openActressSearch() {
             actressSearchName.value = '';
             actressSearchAliases.value = '';
             actressSearchStatus.textContent = '';
+            setActressWikiLink('');
             actressSearchModal.classList.remove('hidden');
             actressSearchName.focus();
         }
@@ -1127,6 +1140,7 @@
             var reqId = ++actressSearchReqId;
             actressSearchStatus.textContent = '検索中...';
             var names = [];
+            var pageUrl = '';
             try {
                 // 入力がメイン名か別名か不明なため、まず別名検索でメイン名を解決
                 var mainName = name;
@@ -1141,6 +1155,7 @@
                 if (detailsRes.ok) {
                     var detailsData = await detailsRes.json();
                     if (detailsData.main_name) names.push(detailsData.main_name);
+                    if (detailsData.page_url) pageUrl = detailsData.page_url;
                     if (Array.isArray(detailsData.aliases)) {
                         detailsData.aliases.forEach(function(a) {
                             if (names.indexOf(a) === -1) names.push(a);
@@ -1150,6 +1165,7 @@
             } catch (e) {
                 if (reqId === actressSearchReqId) {
                     actressSearchStatus.textContent = 'サーバーに接続できません（npm run serve で実行してください）';
+                    setActressWikiLink('');
                 }
                 return;
             }
@@ -1157,9 +1173,11 @@
             if (names.length === 0) {
                 actressSearchAliases.value = '';
                 actressSearchStatus.textContent = '該当する女優が見つかりませんでした';
+                setActressWikiLink('');
             } else {
                 actressSearchAliases.value = names.join(', ');
                 actressSearchStatus.textContent = names.length + ' 件の名前（メイン名＋別名）';
+                setActressWikiLink(pageUrl);
             }
         }
 
@@ -1175,6 +1193,7 @@
                 actressSearchReqId++; // 進行中のリクエスト結果を無効化
                 actressSearchAliases.value = '';
                 actressSearchStatus.textContent = '';
+                setActressWikiLink('');
                 return;
             }
             actressSearchTimer = setTimeout(function() { lookupActressAliases(v); }, 350);
