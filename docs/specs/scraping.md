@@ -225,7 +225,7 @@ VRACK（Hey動画・一本道・HEYZO）の購入済み動画をスクレイピ�
 
 ### 検索優先順位
 
-1. `https://avwikidb.com/work/{manufacturerCode}/` — 「出演女優」フィールドをメーカー名検証付きで抽出
+1. `https://avwikidb.com/work/{manufacturerCode}/` — 「出演女優」フィールドをメーカー名検証付きで抽出。取得ページが要求品番のページか（タイトル or `品番(CODE)` 行に品番が含まれるか）を検証し、不一致なら女優を拾わずスキップ（Cloudflare チャレンジやフォールバックで別作品ページが返った際の誤取得を防止）
 2. `https://av-wiki.net/{manufacturerCode}/` — 「AV女優名」セクションから抽出（「＊」は除外）
 3. **av-wiki.net フォールバック** — manufacturerCode で失敗時にproductCode（小文字）で再試行
 4. `https://adult-wiki.net/search/?keyword={productCode}` — 検索結果が1件のみの場合に詳細ページへアクセス
@@ -266,6 +266,7 @@ VRACK（Hey動画・一本道・HEYZO）の購入済み動画をスクレイピ�
 
 ### 技術ノート
 
+- **avwikidb.com**: 抽出後、名前らしくない断片（2〜20文字外、文章・UI要素を示す語を含むもの）を除外する `looksLikeName` バリデータで最終フィルタ
 - **jav321.com**: TextNode抽出 → innerTextフォールバック → CSSセレクタフォールバック の3段階抽出
 - **adult-wiki.net**: 検索結果が1件のみの場合だけ詳細ページへアクセス（無駄なページロードを回避）
 - エラー時はログ出力して次のアイテムに継続
@@ -370,4 +371,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: 2f40902 -->
+<!-- last-documented-commit: 79638ac -->
