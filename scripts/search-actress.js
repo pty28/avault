@@ -183,8 +183,24 @@ async function fetchFromAvwikidb(mc, page) {
     await sleep(1000);
 
     // 「出演女優」セクションとメーカー情報を探す
-    const result = await page.evaluate(() => {
+    const result = await page.evaluate((mc) => {
       const bodyText = document.body.innerText;
+      const mcUpper = (mc || '').toUpperCase();
+
+      // このページが本当に要求した品番のページか確認する。
+      // Cloudflare チャレンジやフォールバックで別作品・別女優ページが返ると、
+      // そこに載っている無関係なキャスト（例: 類似作品/特集の女優）を誤って拾うため。
+      const onRequestedWork =
+        document.title.toUpperCase().includes(mcUpper) ||
+        bodyText.toUpperCase().includes('品番(CODE)\n' + mcUpper);
+      if (!onRequestedWork) {
+        return { actresses: [], makerName: null, offPage: true };
+      }
+
+      // 名前らしくない断片（文章の一部・UI要素）を除外する共通バリデータ
+      const looksLikeName = (n) =>
+        typeof n === 'string' && n.length >= 2 && n.length <= 20 &&
+        !/(思われ|ため|ので|同様|として|します|でしょう|ください|情報|作品|表記|モザイク|覆面|出演|未特定|表示)/.test(n);
 
       let actresses = [];
 
@@ -242,8 +258,15 @@ async function fetchFromAvwikidb(mc, page) {
         }
       }
 
+      // 文章の断片・UI要素が混入していないか最終チェック
+      actresses = actresses.filter(looksLikeName);
+
       return { actresses, makerName };
-    });
+    }, mc);
+
+    if (result.offPage) {
+      console.log(`     ⚠️  要求品番(${mc})のページではないためスキップ`);
+    }
 
     return result;
   } catch (error) {
