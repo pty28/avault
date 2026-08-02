@@ -20,6 +20,16 @@
  * 正しく取得できることを実データで確認済み）。fiberの親方向(`.return`)を
  * 最大25階層まで辿る必要がある（マイライブラリのグリッド項目は「おすすめ」枠より
  * ラップ階層が深いことを確認済み）。
+ *
+ * レコメンドカルーセルの除外（重要）: マイライブラリページ下部の
+ * 「あなたと好みが似た人が見ている商品」レコメンドカルーセルのカードも、
+ * 購入済みグリッドと同様に`content.id`を持つコンポーネントとして描画されており、
+ * 素朴なfiber walkでは両者を区別できず誤って購入済みカードとして混入してしまう
+ * （実データで40件の混入を確認・全ページで同一IDが重複出現することから発覚）。
+ * 購入済みグリッドのカードは`props`に`isSelected`（選択状態、モーダル起動用）を
+ * 持つのに対し、レコメンドカードは`isSelected`を持たず代わりに`i3Params`
+ * （DMM内部の推薦システム用トラッキングパラメータ）を持つという構造差が
+ * 実地検証で判明したため、`'isSelected' in props`をカード確定条件に加えている。
  */
 
 const MYLIBRARY_BASE = 'https://video.dmm.co.jp/mylibrary/';
@@ -57,7 +67,12 @@ async function getPageItems(page) {
       let fiber = el[fiberKey];
       for (let i = 0; i < maxDepth && fiber; i++) {
         const props = fiber.memoizedProps;
-        if (props && props.content && props.content.id) {
+        // 'isSelected' は購入済みグリッドのカード固有のprop。ページ下部の
+        // 「あなたと好みが似た人が見ている商品」レコメンドカルーセルのカードも
+        // 同様にcontent.idを持つが、propsは{content, isLoading, onClick, i3Params}
+        // という別形状で isSelected を持たない（実地検証済み）。これを除外しないと
+        // レコメンド商品を購入済みカードとして誤認識してしまう。
+        if (props && props.content && props.content.id && 'isSelected' in props) {
           return {
             id: props.content.id,
             title: props.content.title,
@@ -95,7 +110,12 @@ async function locateCandidate(page, cid) {
       let fiber = el[fiberKey];
       for (let i = 0; i < maxDepth && fiber; i++) {
         const props = fiber.memoizedProps;
-        if (props && props.content && props.content.id) {
+        // 'isSelected' は購入済みグリッドのカード固有のprop。ページ下部の
+        // 「あなたと好みが似た人が見ている商品」レコメンドカルーセルのカードも
+        // 同様にcontent.idを持つが、propsは{content, isLoading, onClick, i3Params}
+        // という別形状で isSelected を持たない（実地検証済み）。これを除外しないと
+        // レコメンド商品を購入済みカードとして誤認識してしまう。
+        if (props && props.content && props.content.id && 'isSelected' in props) {
           return {
             id: props.content.id,
             title: props.content.title,

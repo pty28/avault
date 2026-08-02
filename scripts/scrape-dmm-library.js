@@ -168,6 +168,8 @@ async function gqlInPage(page, operationName, query, variables) {
 
 /**
  * 購入済み一覧をページングで全件取得
+ * （視聴期限切れ等でstatusesがUNDELIVERED/AVAILABLE以外になった作品は、
+ *   サイトの標準表示（「期限切れ商品を表示」オフ）と同様に除外する）
  */
 async function fetchAllPurchases(page) {
   console.log('📥 購入済み一覧を取得しています...');
@@ -177,7 +179,13 @@ async function fetchAllPurchases(page) {
 
   while (true) {
     const res = await gqlInPage(page, 'Mylibrary', MYLIBRARY_QUERY, {
-      filter: { displayStatus: 'VISIBLE' },
+      // statuses: ['UNDELIVERED', 'AVAILABLE'] は「期限切れ商品を表示」チェックボックスが
+      // オフの状態(サイトの標準表示)でフロントエンドが実際に送っているfilterと同一
+      // (ネットワークキャプチャで確認済み)。これが無いとdisplayStatus:VISIBLEだけでは
+      // レンタル等の視聴権限が期限切れになった作品も一覧に含まれてしまい、サイト上の
+      // 表示件数より当データの方が多くなる不整合が生じる(実データでJFB00461・
+      // H_1292ZBG00004の2件で確認)。
+      filter: { displayStatus: 'VISIBLE', statuses: ['UNDELIVERED', 'AVAILABLE'] },
       offset,
       sort: 'VIEWING_RIGHTS_ACQUIRED_AT_DESC',
     });
