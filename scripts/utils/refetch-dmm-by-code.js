@@ -29,6 +29,7 @@ const {
   enrichItem,
   CONFIG,
 } = require('../scrape-dmm-library');
+const { verifyAndFixPartCounts } = require('./dmm-part-checker.js');
 
 function takeOption(args, name) {
   const idx = args.indexOf(name);
@@ -107,7 +108,7 @@ async function main() {
         const r = await enrichItem(page, item, cidManual || undefined);
         if (r.ok) {
           if (prevActresses.length > 0) item.actresses = prevActresses;
-          item.itemURL = `https://video.dmm.co.jp/av/content/?id=${cid}`;
+          // itemURL は enrichItem 内で floor (AV/AMATEUR等) に基づき正しく設定される
           okCount++;
           console.log(`   ${progress} ✅ ${item.productCode} (cid:${cid})  品番:${item.manufacturerCode || '-'}  女優:${(item.actresses || []).join(',') || '-'}  player:${(item.playerUrls || []).length}`);
         } else {
@@ -122,6 +123,29 @@ async function main() {
     }
 
     fs.writeFileSync(libraryFile, JSON.stringify(data, null, 2), 'utf-8');
+
+    // Pass 2: playerUrlsのpart数・itemURLをマイライブラリの実DOMで検証・修正する
+    // (詳細は scripts/utils/dmm-part-checker.js を参照)。対象が少数のため常に実行する。
+    const partCheckTargets = targets.filter(item => Array.isArray(item.playerUrls) && item.playerUrls.length >= 1);
+    if (partCheckTargets.length > 0) {
+      console.log(`\n🔎 Pass 2: playerUrlsのpart数・itemURLを検証します（対象: ${partCheckTargets.length}件）...`);
+      await verifyAndFixPartCounts(page, partCheckTargets, {
+        onItemResult: (result) => {
+          const urlNote = result.itemUrlFixed ? '  [itemURL修正]' : '';
+          if (!result.ok) {
+            console.log(`   ⚠️  ${result.productCode}  ${result.reason}${urlNote}`);
+          } else if (result.match) {
+            console.log(`   ✅ ${result.productCode}  part:${result.actualCount}${urlNote}`);
+          } else if (result.fixed) {
+            console.log(`   🔧 ${result.productCode}  現在:${result.currentCount} → 実際:${result.actualCount}  修正しました${urlNote}`);
+          } else {
+            console.log(`   ❗ ${result.productCode}  現在:${result.currentCount}  実際:${result.actualCount}  (要確認・自動修正なし)${urlNote}`);
+          }
+        },
+      });
+      fs.writeFileSync(libraryFile, JSON.stringify(data, null, 2), 'utf-8');
+    }
+
     console.log(`\n💾 保存完了: ${libraryFile}`);
     console.log(`   成功 ${okCount} / 失敗 ${failCount}\n`);
   } finally {

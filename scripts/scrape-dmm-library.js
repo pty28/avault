@@ -1,6 +1,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 const path = require('path');
+const { verifyAndFixPartCounts } = require('./utils/dmm-part-checker.js');
 
 /**
  * DMMマイライブラリ（新SPA: video.dmm.co.jp）から作品情報を取得するスクリプト
@@ -11,10 +12,14 @@ const path = require('path');
  * 取得方法:
  *   1. Mylibrary       : 購入済み一覧（id=品番, タイトル, サムネ, contentType, 取得日時）
  *   2. ContentMeta     : 詳細メタ（メーカー品番, 女優, メーカー, レーベル, products→playerUrls）
+ *   3. Pass 2（part検証）: ContentMeta APIはpart数を返さないため、マイライブラリの
+ *      実DOM（モーダルの「ストリーミング再生」ボタン数）を見て playerUrls の件数を
+ *      検証・修正する（scripts/utils/dmm-part-checker.js）。
  *
  * 使用方法:
- *   npm run scrape-dmm            - 新規分の取得＋メタ付与
- *   npm run scrape-dmm -- --force - 既存分も含めてメタを再取得
+ *   npm run scrape-dmm                      - 新規分の取得＋メタ付与＋part検証
+ *   npm run scrape-dmm -- --force           - 既存分も含めてメタを再取得
+ *   npm run scrape-dmm -- --skip-part-check - Pass 2（part検証、低速）を省略
  */
 
 const CONFIG = {
@@ -117,6 +122,18 @@ function extractProductCodeFromThumbnail(src) {
   m = src.match(/\/([a-z0-9_-]+)[-_](ps|js|pl|pt|pb|jp|640|360)\.(jpg|png|gif)/i);
   if (m) return m[1].toUpperCase();
   return null;
+}
+
+/**
+ * itemURL を floor から構築する（floorは "AV" | "AMATEUR" 等、APIレスポンスの実データ）。
+ * 従来は "/av/content/" に決め打ちしており、素人系(floor=AMATEUR)作品では
+ * 実際には "/amateur/content/" が正しいURLなのに誤ったURLになっていた
+ * （GraphQL移行時のEnbug。floor自体は元々Mylibrary/ContentMeta両方のクエリで
+ * 取得済みだったが、itemURL構築に使われていなかった）。
+ */
+function buildItemURL(cid, floor) {
+  const segment = (floor || 'AV').toLowerCase();
+  return `https://video.dmm.co.jp/${segment}/content/?id=${cid.toLowerCase()}`;
 }
 
 /**
@@ -234,6 +251,7 @@ async function enrichItem(page, item, cidOverride) {
   item.makerId = (c.maker && c.maker.id) || item.makerId || '';
   item.labelName = (c.label && c.label.name) || item.labelName || '';
   item.labelId = (c.label && c.label.id) || item.labelId || '';
+  item.itemURL = buildItemURL(c.id, c.floor);
 
   const actresses = Array.isArray(c.actresses)
     ? c.actresses.map(a => cleanActressName(a.name)).filter(Boolean)
@@ -314,6 +332,7 @@ async function main() {
 
   const forceMode = process.argv.includes('--force');
   if (forceMode) console.log('🚩 --force: 既存分も含めてメタを再取得します\n');
+  const skipPartCheck = process.argv.includes('--skip-part-check');
 
   let browser;
   try {
@@ -368,7 +387,7 @@ async function main() {
         title: p.title,
         actresses: [],
         thumbnail: p.thumbnail,
-        itemURL: `https://video.dmm.co.jp/av/content/?id=${p.id.toLowerCase()}`,
+        itemURL: buildItemURL(p.id, p.floor),
         isFetched: false,
         isShirouto: false,
         registeredAt: p.acquiredAt || new Date().toISOString(),
@@ -414,11 +433,47 @@ async function main() {
       await new Promise(r => setTimeout(r, CONFIG.metaDelay));
     }
 
+    // 中間保存（Pass 2の前に念のため確定させる）
+    await fs.writeFile(CONFIG.outputFile, JSON.stringify(mergedData, null, 2), 'utf-8');
+
+    // Pass 2: playerUrlsのpart数をマイライブラリの実DOMで検証・修正する。
+    // buildPlayerUrls(API方式)はpart数を判定できず、常にpart=1のみを生成するため、
+    // 複数partの作品はこのPass 2で初めて正しいURL件数になる。
+    let partFixedCount = 0, partUnfixedCount = 0, partCheckedCount = 0, itemUrlFixedCount = 0;
+    if (!skipPartCheck) {
+      const partCheckTargets = targets.filter(item => Array.isArray(item.playerUrls) && item.playerUrls.length >= 1);
+      console.log(`\n🔎 Pass 2: playerUrlsのpart数・itemURLをモーダル実DOMで検証します（対象: ${partCheckTargets.length}件）...`);
+      await verifyAndFixPartCounts(page, partCheckTargets, {
+        onItemResult: (result) => {
+          partCheckedCount++;
+          if (result.itemUrlFixed) itemUrlFixedCount++;
+          const urlNote = result.itemUrlFixed ? '  [itemURL修正]' : '';
+          if (!result.ok) {
+            console.log(`   ⚠️  ${result.productCode}  ${result.reason}${urlNote}`);
+          } else if (result.match) {
+            console.log(`   ✅ ${result.productCode}  part:${result.actualCount}${urlNote}`);
+          } else if (result.fixed) {
+            partFixedCount++;
+            console.log(`   🔧 ${result.productCode}  現在:${result.currentCount} → 実際:${result.actualCount}  修正しました${urlNote}`);
+          } else {
+            partUnfixedCount++;
+            console.log(`   ❗ ${result.productCode}  現在:${result.currentCount}  実際:${result.actualCount}  (要確認・自動修正なし)${urlNote}`);
+          }
+        },
+      });
+    } else {
+      console.log('\n⏭️  --skip-part-check: Pass 2（part数検証）をスキップしました');
+    }
+
     // 最終保存
     await fs.writeFile(CONFIG.outputFile, JSON.stringify(mergedData, null, 2), 'utf-8');
     console.log(`\n💾 保存完了: ${CONFIG.outputFile}`);
     console.log(`   総作品数: ${mergedData.length}件（既存 ${existingData.length} + 新規 ${newItems.length}）`);
     console.log(`   メタ取得: 成功 ${okCount} / 失敗 ${failCount}`);
+    if (!skipPartCheck) {
+      console.log(`   part数検証: ${partCheckedCount}件中 自動修正 ${partFixedCount}件 / 要確認 ${partUnfixedCount}件`);
+      console.log(`   itemURL検証: 自動修正 ${itemUrlFixedCount}件`);
+    }
 
     const withCode = mergedData.filter(item => item.manufacturerCode).length;
     const withPerformers = mergedData.filter(item => item.actresses && item.actresses.length > 0).length;
@@ -443,4 +498,4 @@ if (require.main === module) {
   main().catch(err => { console.error(err); process.exit(1); });
 }
 
-module.exports = { setupSession, enrichItem, buildPlayerUrls, extractProductCodeFromThumbnail, CONFIG };
+module.exports = { setupSession, enrichItem, buildPlayerUrls, buildItemURL, extractProductCodeFromThumbnail, CONFIG };
