@@ -197,7 +197,9 @@ avault/
 │   │   ├── generate-viewer.js        # viewer-data.js, presets-data.js等を生成
 │   │   ├── search-products-by-actress.js
 │   │   ├── update-performers.js      # 女優情報を手動更新
-│   │   └── refetch-dmm-by-code.js    # 旧スキーマ品番のメタを再取得
+│   │   ├── refetch-dmm-by-code.js    # 旧スキーマ品番のメタを再取得
+│   │   ├── dmm-part-checker.js       # DMM playerUrlsのpart数・itemURLを実DOMで検証・修正
+│   │   └── check-dmm-playerurl-parts.js  # 既存データのpart数を一括監査・バックフィル
 │   │
 │   └── debug/                        # デバッグ・テストスクリプト
 │
@@ -404,10 +406,11 @@ rm -rf .puppeteer-profiles/d2pass     # VRACK・カリビアン のセッショ�
 ```bash
 npm run scrape-dmm                    # 全作品を取得（作品情報＋女優・メーカー・レーベル・品番・プレイヤーURLを一括取得）
 npm run scrape-dmm -- --force         # 既存分も含めてメタを再取得
+npm run scrape-dmm -- --skip-part-check  # playerUrlsのpart数・itemURLの実DOM検証（Pass 2、低速）を省略
 npm run search-actress                # 女優未登録作品を Web から補完
 ```
 
-`scrape-dmm` が DMM の内部 GraphQL API からメタ情報まで取得するため、女優・メーカー・品番取得用の個別コマンドは不要です。
+`scrape-dmm` が DMM の内部 GraphQL API からメタ情報まで取得するため、女優・メーカー・品番取得用の個別コマンドは不要です。ContentMeta API はpart数（複数話への分割数）を返さないため、取得後に実際のマイライブラリDOMを見て `playerUrls` の件数と `itemURL` を検証・自動修正する処理（Pass 2）が続けて走ります。
 
 詳細は [docs/specs/scraping.md](docs/specs/scraping.md) を参照。
 
@@ -468,6 +471,13 @@ npm run update-performers-vrack -- heydouga_123456 "女優名"
 npm run refetch-dmm -- 53RDV043 53KS8488   # 指定した品番だけ ContentMeta から再取得
 ```
 > `isFetched` 済みでメタが空・不正な旧エントリの復旧用。`productCode` は変更せず、`playerUrls`・メーカー・レーベル・女優・品番を上書きします（手動入力済みの女優名は保護）。
+
+**DMM playerUrlsのpart数を既存データで一括監査:**
+```bash
+npm run check-dmm-playerurl-parts -- --limit 10   # 件数指定（デフォルト20件）
+npm run check-dmm-playerurl-parts -- --all        # 全件
+```
+> `data/dmm-library.json` の既存エントリを対象に、マイライブラリの実DOMでpart数・itemURLを検証し、ズレがあれば自動修正するバックフィル/監査ツール。新規スクレイプ分は `scrape-dmm` のPass 2で自動検証済みのため、主に過去データの点検用。
 
 **Web から女優情報を取得（商品IDで女優を検索）:**
 ```bash
@@ -546,4 +556,4 @@ npm run serve-start
 
 MIT
 
-<!-- last-documented-commit: 2f40902 -->
+<!-- last-documented-commit: d8ad9cd -->

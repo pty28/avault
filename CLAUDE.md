@@ -83,7 +83,9 @@ avault/
 │   │   ├── generate-viewer.js      # viewer-data.js 等を自動生成
 │   │   ├── search-products-by-actress.js
 │   │   ├── update-performers.js
-│   │   └── refetch-dmm-by-code.js  # 旧スキーマ品番のメタを ContentMeta から再取得
+│   │   ├── refetch-dmm-by-code.js  # 旧スキーマ品番のメタを ContentMeta から再取得
+│   │   ├── dmm-part-checker.js     # DMM playerUrlsのpart数・itemURLを実DOMで検証・修正する共通ロジック
+│   │   └── check-dmm-playerurl-parts.js  # 既存データのpart数を一括監査・バックフィル
 │   │
 │   └── debug/                      # 調査用スクリプト（実装完了後は削除する）
 │
@@ -189,6 +191,7 @@ npm run run-all-mgs -- --full --force
 ```bash
 npm run scrape-dmm                  # DMM スクレイプ（作品情報＋女優・メーカー・レーベル・品番・playerURL を GraphQL API で一括取得）
 npm run scrape-dmm -- --force       # 既存分も含めてメタを再取得
+npm run scrape-dmm -- --skip-part-check  # playerUrlsのpart数・itemURLの実DOM検証（Pass 2、低速）を省略
 ```
 
 ### MGStage / VRACK / Caribbean
@@ -233,6 +236,8 @@ npm run update-performers-vrack -- heydouga_123456 "女優名"        # VRACK
 npm run update-performers-1pondo -- 1pondo_123456 "女優名"         # 一本道
 npm run update-performers-caribbean -- caribbean_001_001 "女優名"  # カリビアン
 npm run refetch-dmm -- 53RDV043 53KS8488           # DMM 旧スキーマ品番のメタを ContentMeta から再取得
+npm run check-dmm-playerurl-parts -- --limit 10    # DMM playerUrlsのpart数を既存データで一括監査（デフォルト20件）
+npm run check-dmm-playerurl-parts -- --all         # 全件監査
 ```
 
-<!-- last-documented-commit: 2f40902 -->
+<!-- last-documented-commit: d8ad9cd -->

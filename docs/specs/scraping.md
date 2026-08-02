@@ -122,10 +122,12 @@ npm run run-all-mgs -- --full --force
    - `makerContentId` → `manufacturerCode`、`maker` → `makerName`/`makerId`、`label` → `labelName`/`labelId`
    - `actresses[].name` を `cleanActressName`（Alice表記・括弧内別名を整形）して `actresses` に格納
    - `products` から playerUrls を再構成（後述）
+   - `itemURL` を `buildItemURL(cid, floor)` で構築（`floor` が `AMATEUR` なら `/amateur/content/`、それ以外は `/av/content/`。GraphQL移行時、常に `/av/content/` に決め打ちしていたバグの修正）
    - 取得成功で `isFetched: true`
 6. `data/dmm-library.json` に保存（メタ付与の前後で2回書き込み・インクリメンタル更新）
+7. **Pass 2（part検証、`--skip-part-check` で省略可）**: `ContentMeta` API は part 数を返さないため `buildPlayerUrls` は常に part=1 のURLしか生成できない。マイライブラリの実DOM（カードクリックで開くモーダルの「ストリーミング再生」ボタン数）を見て `playerUrls` の件数・`itemURL` を検証し、ズレていれば自動修正する（`scripts/utils/dmm-part-checker.js` の `verifyAndFixPartCounts`、詳細は後述）
 
-> **注**: API 方式ではページングで常に全件を取得するため、旧来の `--full`（1ページ目のみ↔全ページ）の区別はなくなった。フラグは `--force` のみ。
+> **注**: API 方式ではページングで常に全件を取得するため、旧来の `--full`（1ページ目のみ↔全ページ）の区別はなくなった。フラグは `--force` と `--skip-part-check`。
 
 ### playerUrls の再構成 (`buildPlayerUrls`)
 
@@ -161,6 +163,25 @@ npm run run-all-mgs -- --full --force
 ```
 
 > **注**: `isShirouto` は API 方式では自動分類されず常に `false`（レガシーフィールド）。`isFetched` は新規作成時 `false`、`ContentMeta` 取得成功で `true` に更新される。
+
+### part検証・修正 (`scripts/utils/dmm-part-checker.js`)
+
+`ContentMeta` API がpart数を返さないことの対策として、マイライブラリの実DOMから正しいpart数を検証・修正する共通ロジック（`verifyAndFixPartCounts`）。`scrape-dmm-library.js` のPass 2と `refetch-dmm-by-code.js`、監査用CLI `check-dmm-playerurl-parts.js` から共用する。
+
+- カードの特定: サムネイルURLからのcid推測ではなく、DOM要素から **React Fiber を辿って `memoizedProps.content`（APIレスポンスそのままの `{ id, title, isDiscontinued }`）を直接読む**。サムネイルの有無・形式（`isDiscontinued` で画像が無いケースを含む）に左右されない
+- 各カードをクリックしてモーダルを開き、「ストリーミング再生」ボタン（数字ラベルのみ）の個数を実際のpart数として取得（描画が非同期のため連続2回同値になるまでポーリング）
+- `itemURL` はモーダル内の商品詳細ページへの `<a href>` をそのまま採用（`buildItemURL` のテンプレート構築より正確。廃盤等でリンクが無い場合は `itemURL` を空にする）
+- 実際のpart数 > 現在のpart数の場合のみ自動修正（`buildPlayerUrlsForCount` でpart=1..Nを再生成）。現在のpart数の方が多い場合は信頼性が低いため自動修正せず「要確認」として報告のみ
+- モーダル内のpartボタンの `href`（`digital/-/proxy/...`）は直接ナビゲーションしない（動画ファイル自体のダウンロードが発生するため）
+
+### check-dmm-playerurl-parts（既存データの一括監査）
+
+```bash
+npm run check-dmm-playerurl-parts -- --limit 10   # 件数指定（デフォルト20件）
+npm run check-dmm-playerurl-parts -- --all        # 全件
+```
+
+`data/dmm-library.json` の既存エントリ（`isFetched:true` かつ `playerUrls` あり、VR除く）に対して `verifyAndFixPartCounts` を実行するバックフィル/監査ツール。新規スクレイプ分は `scrape-dmm-library.js` のPass 2で自動検証されるため、本ツールは「Pass 2が無かった時代のデータ」や想定外のドリフトを洗い出す用途。チェック済み品番は `scripts/debug/dmm-playerurl-parts-check-progress.json` に記録し、次回実行時はスキップ（再実行して続きから処理可能）。修正が発生するたびに `data/dmm-library.json` へ都度保存する。
 
 ---
 
@@ -307,7 +328,7 @@ npm run refetch-dmm -- --file data/dmm-library.json SIRO05588  # 対象ファイ
 npm run refetch-dmm -- --cid 53ks08352 53RDV043    # id を手動指定（対象1件のとき）
 ```
 
-指定した `productCode` のエントリだけ DMM の `ContentMeta` API からメタ（`playerUrls` / `maker` / `label` / `actresses` / `manufacturerCode` / `itemURL`）を取り直して上書きする復旧用ツール。`isFetched` 済みで `scrape-dmm` の再取得対象から外れている旧スキーマ由来のエントリ（メタが空・不正）を救済する。`productCode` 自体は変更しない。`ContentMeta` の `id` はマイライブラリ一覧の id（= `productCode` 小文字。サムネのゼロ埋め cid ではない）で解決し、解決できない場合は `--cid` で手動指定する。既存の手動キュレーション済み女優名（非空の `actresses`）は enrich 後に復元して保護する。
+指定した `productCode` のエントリだけ DMM の `ContentMeta` API からメタ（`playerUrls` / `maker` / `label` / `actresses` / `manufacturerCode` / `itemURL`）を取り直して上書きする復旧用ツール。`isFetched` 済みで `scrape-dmm` の再取得対象から外れている旧スキーマ由来のエントリ（メタが空・不正）を救済する。`productCode` 自体は変更しない。`ContentMeta` の `id` はマイライブラリ一覧の id（= `productCode` 小文字。サムネのゼロ埋め cid ではない）で解決し、解決できない場合は `--cid` で手動指定する。既存の手動キュレーション済み女優名（非空の `actresses`）は enrich 後に復元して保護する。`itemURL` は `enrichItem` 内で `floor` に基づき正しく設定されるため上書きしない。メタ取得後、対象件数分は常に Pass 2（part検証、上述）も実行する。
 
 ---
 
@@ -371,4 +392,4 @@ npm run scrape-caribbean -- --force
 - アイテム間に1000ms のレート制限
 - スクレイプ時に `isFetched: true` を設定（APIはないため）
 
-<!-- last-documented-commit: 79638ac -->
+<!-- last-documented-commit: d8ad9cd -->

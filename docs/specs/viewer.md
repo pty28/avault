@@ -128,7 +128,7 @@ npm run viewer           # 生成 + viewer.html を直接開く
 **動作:**
 1. 入力値から `/search?alias=<入力値>` でメイン名を解決
 2. `/details?name=<メイン名>` でメイン名＋全別名＋`page_url` を取得
-3. `page_url` が返れば Wiki リンクを表示、それ以外（未接続・該当なし・モーダル再オープン・入力クリア）ではリンクを非表示にリセット
+3. `page_url` が返れば Wiki リンクを表示、それ以外（未接続・該当なし・モーダル再オープン・入力クリア）ではリンクを非表示にリセット。`page_url` は `http:`/`https:` 以外のスキーム（`javascript:` 等）や不正なURLの場合もリンクを表示せず非表示のままにする
 4. デバウンスとリクエストID管理により、古いリクエストの結果は破棄
 5. サーバー未接続時は「サーバーに接続できません」と表示（API は serve-start 時のみ有効）
 
@@ -260,4 +260,4 @@ SQLite ファイル（`data/actresses.db`）を使用して女優データを管
 - presets/tags が動作しない場合: ブラウザコンソールを確認 → `npm run generate-viewer` で再生成 → `http://localhost:8000` でアクセスしているか確認
 - タグ編集ができない場合: `npm run serve-start` で起動しているか確認（`file://` では編集不可）
 
-<!-- last-documented-commit: 8f78e56 -->
+<!-- last-documented-commit: 749eda4 -->
